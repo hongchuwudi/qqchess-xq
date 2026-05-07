@@ -363,13 +363,18 @@ class MessageParser:
 class GameStateTracker:
     """追踪完整对局状态"""
 
-    def __init__(self):
+    def __init__(self, my_camp=None):
+        """
+        my_camp: 'red' or 'black' — player's side (from nSeatID vs iFirstSide)
+        """
         self.start_fen = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w"
         self.current_fen = self.start_fen
         self.move_history = []
         self.board = XQFenParser.parse(self.start_fen)
         self.move_count = 0
         self.game_started = False
+        self.my_camp = my_camp  # 'red' or 'black'
+        self._side_toggle = 'w'  # internal FEN side tracker (always alternates)
 
     def apply_move(self, from_col, from_row, to_col, to_row):
         """应用一步走子"""
@@ -392,9 +397,16 @@ class GameStateTracker:
         grid[to_row][to_col] = piece
 
         side = 'b' if self.board['side'] == 'w' else 'w'
+        self._side_toggle = side
         self.current_fen = XQFenParser.to_string(grid, side)
         self.board = XQFenParser.parse(self.current_fen)
         self.move_count += 1
+
+        # Camp determination:
+        # - In Chinese chess FEN, 'w' always goes first (Red), 'b' second (Black)
+        # - The side_to_move tells us who just moved (BEFORE toggle, it was their turn)
+        mover_camp = 'red' if self.board['side'] == 'w' else 'black'
+        is_own = (self.my_camp == mover_camp) if self.my_camp else None
 
         move_record = {
             'num': self.move_count,
@@ -404,6 +416,8 @@ class GameStateTracker:
             'captured': captured if captured != '.' else None,
             'fen': self.current_fen,
             'side': self.board['side'],
+            'side_name': '红方' if mover_camp == 'red' else '黑方',
+            'is_own': is_own,
         }
         self.move_history.append(move_record)
 
@@ -416,6 +430,7 @@ class GameStateTracker:
             'move_count': self.move_count,
             'side': self.board['side'] if self.board else 'w',
             'last_move': self.move_history[-1] if self.move_history else None,
+            'my_camp': self.my_camp,
         }
 
     def display(self):
@@ -423,7 +438,10 @@ class GameStateTracker:
         if self.board:
             print(XQFenParser.display(self.board['grid']))
             side_name = '红方' if self.board['side'] == 'w' else '黑方'
-            print(f"  当前: {side_name}走棋 | 第{self.move_count + 1}回合")
+            camp_str = ''
+            if self.my_camp:
+                camp_str = f' | 我方: {"红方" if self.my_camp == "red" else "黑方"}'
+            print(f"  当前: {side_name}走棋 | 第{self.move_count + 1}回合{camp_str}")
 
     def get_move_uci_list(self):
         """获取UCI格式走子列表"""
@@ -499,11 +517,13 @@ def demo_mode():
         }
 
         if result:
-            side = '红方' if result['side'] == 'b' else '黑方'
+            side = result.get('side_name', '?')
+            is_own = result.get('is_own')
+            owner_str = f' [我方]' if is_own else ('' if is_own is None else f' [对手]')
             piece = piece_names.get(result['piece'], result['piece'])
 
             print(f"\n第{i+1}步: {name}")
-            print(f"  {piece} ({fc},{fr}) → ({tc},{tr}) [{side}走]")
+            print(f"  {piece} ({fc},{fr}) → ({tc},{tr}) [{side}走]{owner_str}")
             if result['captured']:
                 captured = piece_names.get(result['captured'], result['captured'])
                 print(f"  !! 吃掉: {captured}")
@@ -637,7 +657,7 @@ def analyze_session(session_path):
         if msg_id in LOBBY: return 'lobby'
         return 'other'
 
-    # ---- 加载 summary 获取 session_key ----
+    # ---- 加载 summary 获取 session_key 和 camp ----
     summary = {}
     if os.path.exists(summary_path):
         try:
@@ -649,6 +669,19 @@ def analyze_session(session_path):
     session_key_hex = summary.get('session_key')
     session_key = bytes.fromhex(session_key_hex) if session_key_hex else None
     uin = summary.get('uin')
+    my_seat = summary.get('my_seat')
+    i_first_side = summary.get('i_first_side')
+    my_camp = summary.get('my_camp')
+
+    # ---- 加载 moves 获取带 camp 的走子列表 ----
+    moves_data = []
+    if os.path.exists(moves_path):
+        try:
+            with open(moves_path, 'r', encoding='utf-8') as f:
+                moves_data = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            pass
+    moves_by_seq = {m['seq']: m for m in moves_data if isinstance(m, dict)}
 
     # ---- 输出 ----
     print("=" * 70)
@@ -669,6 +702,14 @@ def analyze_session(session_path):
         print(f"   UIN: {uin}")
     moves_found = summary.get('moves', 0)
     print(f"   已提取走子: {moves_found}")
+    my_seat = summary.get('my_seat')
+    i_first_side = summary.get('i_first_side')
+    my_camp = summary.get('my_camp')
+    if my_camp:
+        camp_label = '红方' if my_camp == 'red' else '黑方'
+        print(f"   我方阵营: {camp_label} (seat={my_seat}, first_side={i_first_side})")
+    elif my_seat is not None:
+        print(f"   我方座位: seat={my_seat} (first_side未捕获)")
     print()
 
     # ---- 时间线 ----
@@ -712,6 +753,14 @@ def analyze_session(session_path):
         if msg_id == 86004 and direction == 'SEND':
             battle_moves_sent += 1
             label = f'走子 #{battle_moves_sent}'
+            if my_camp:
+                label += ' [我方]'
+        elif msg_id == 86004 and direction == 'RECV':
+            if my_camp:
+                label += ' [对手]'
+        elif msg_id == 86001:
+            if i_first_side is not None:
+                label += f' (红先: seat={i_first_side})'
         elif msg_id == 85075:
             label = '对局结束' if direction == 'RECV' and size < 200 else '对局通知'
 

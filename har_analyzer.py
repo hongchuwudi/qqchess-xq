@@ -361,12 +361,16 @@ class RealtimeAnalyzer:
     """
     实时分析器框架 - 用于后续开发实时棋局分析工具
     需要配合mitmproxy或浏览器插件使用
+
+    阵营判定: 从协议层的 nSeatID 和 iFirstSide 获取:
+      my_camp = 'red' if nSeatID == iFirstSide else 'black'
     """
 
-    def __init__(self):
+    def __init__(self, my_camp=None):
         self.board_fen = XQ_START_FEN
         self.move_history = []
-        self.current_side = 'w'  # w=红方, b=黑方
+        self.current_side = 'w'  # FEN side (w=红方, b=黑方) — always alternates
+        self.my_camp = my_camp  # 'red' or 'black' — player's side from protocol
 
     def parse_fen(self, fen_str):
         """解析FEN字符串为棋盘二维数组"""

@@ -642,6 +642,37 @@ def parse_request_play(body):
     }
 
 
+def parse_game_context(body):
+    """
+    Qca / TGameInfo (QQChessPlayProto) — 86001 game context:
+      qm(0), hxb(1), iFirstSide(2), tF(3), VX(4), UX(5),
+      Am(6), WB(7), eA(8), Pwb(9), Qwb(10), iwb(11),
+      jwb(12), ewb(13), fwb(14), XXa(15), wba(16), vba(17),
+      vFc(18), qYa(19), qBc(20), pBc(21), bFinishCompeteRed(22), b1c(23)
+
+    iFirstSide = seat ID of red side (first mover).
+    Client JS confirms: this.I$ = xa.iFirstSide;
+                        this.zl = this.I$ === this.mySeat;  // true=player is red
+    """
+    j = JceIn(body)
+    result = {
+        'iFirstSide': j.read_int32(2, -1),
+        'qm': j.read_int32(0, -1),
+        'hxb': j.read_int32(1, -1),
+    }
+    # Also try to extract board pos from Am (tag 6): struct CY
+    # CY: Gbb(0), R3(1), S3(2), T3(3), W3(4), $5b(5), a6b(6), qm(7),
+    #     swb(8), wxb(9), iFlag(10)
+    if j.read_struct_begin(6):
+        # Just extract key position fields
+        result['board_R3'] = j.read_int32(1, -1)
+        result['board_S3'] = j.read_int32(2, -1)
+        result['board_T3'] = j.read_int32(3, -1)
+        result['board_W3'] = j.read_int32(4, -1)
+        j.read_struct_end()
+    return result
+
+
 # ============================================================
 # WS 帧解析
 # ============================================================
@@ -750,6 +781,9 @@ class QQChessWSProxy:
         self.move_n = 0
         self.session_key = None
         self.uin = None
+        self.my_seat = None       # nSeatID from our SEND 86004
+        self.i_first_side = None  # which seat is red (from RECV 86001 context)
+        self.my_camp = None       # 'red' or 'black'
 
     def websocket_start(self, flow):
         if 'qqchess' not in flow.request.url:
@@ -828,16 +862,41 @@ class QQChessWSProxy:
             except Exception as e:
                 ctx.log.error(f"  [DEC] 失败: {e}")
 
+        # ---- 游戏上下文 (86001) — 提取 iFirstSide ----
+        check_body_ctx = plain if encrypted else body
+        if msg_id == 86001 and not m.from_client and check_body_ctx:
+            try:
+                ctx2 = parse_game_context(check_body_ctx)
+                if ctx2.get('iFirstSide', -1) >= 0:
+                    self.i_first_side = ctx2['iFirstSide']
+                    ctx.log.info(
+                        f"  [CTX] iFirstSide={self.i_first_side}  "
+                        f"qm={ctx2.get('qm')}  hxb={ctx2.get('hxb')}"
+                    )
+                    if self.my_seat is not None:
+                        self.my_camp = 'red' if self.my_seat == self.i_first_side else 'black'
+                        ctx.log.info(f"  [CAMP] my_seat={self.my_seat} → {self.my_camp}")
+            except Exception as e:
+                ctx.log.warn(f"  [CTX] 解析失败: {e}")
+
         # ---- 游戏事件 (86004 走子, 86005/86011 服务器事件) ----
         check_body = plain if encrypted else body
         if msg_id in (86004, 86005, 86011) and check_body:
             try:
                 if msg_id == 86004:
                     ev = parse_request_play(check_body)
+                    # Track player's own seat from SEND messages
+                    seat_id = ev.get('nSeatID', -1)
+                    if seat_id >= 0 and self.my_seat is None:
+                        self.my_seat = seat_id
+                        ctx.log.info(f"  [SEAT] my_seat={self.my_seat}")
+                        if self.i_first_side is not None:
+                            self.my_camp = 'red' if self.my_seat == self.i_first_side else 'black'
+                            ctx.log.info(f"  [CAMP] → {self.my_camp}")
                     ctx.log.info(
                         f"  [SEND] cmdID={ev['nCmdID']}  "
                         f"room={ev['nRoomID']}  table={ev['nTableID']}  "
-                        f"seat={ev.get('nSeatID', '?')}  "
+                        f"seat={seat_id}  "
                         f"vec={len(ev['vecMsgBody'])}B"
                     )
                     move_label = "MOVE SENT"
@@ -869,6 +928,14 @@ class QQChessWSProxy:
                         best = scored[0]
                         self.move_n += 1
                         event_id = ev.get('nEventID', ev.get('nCmdID', 0))
+                        move_seat = ev.get('nSeatID', -1)
+                        # Determine which camp made this move
+                        if self.my_camp and move_seat >= 0:
+                            mover_camp = 'red' if move_seat == self.i_first_side else 'black'
+                            is_own = mover_camp == self.my_camp
+                        else:
+                            mover_camp = None
+                            is_own = None
                         rec = {
                             'num': self.move_n, 'seq': self.total,
                             'time': ts, 'direction': direction,
@@ -877,9 +944,13 @@ class QQChessWSProxy:
                             'uci': best['uci'],
                             'offset': best['offset'],
                             'vec_hex': inner.hex(),
+                            'seat': move_seat,
+                            'camp': mover_camp,
+                            'is_own': is_own,
                         }
                         self.moves.append(rec)
-                        ctx.log.info(f"  >>> [{move_label} #{self.move_n}] {best['uci']} <<<")
+                        own_tag = ' (我方)' if is_own else ''
+                        ctx.log.info(f"  >>> [{move_label} #{self.move_n}] {best['uci']}{own_tag} <<<")
             except Exception as e:
                 ctx.log.warn(f"  [GAME] 解析失败: {e}")
 
@@ -931,6 +1002,9 @@ class QQChessWSProxy:
             'moves': len(self.moves), 'move_list': [m['uci'] for m in self.moves],
             'session_key': self.session_key.hex() if self.session_key else None,
             'uin': self.uin,
+            'my_seat': self.my_seat,
+            'i_first_side': self.i_first_side,
+            'my_camp': self.my_camp,
         }
         sp = os.path.join(out, f'qqchess_summary_{ts}.json')
         with open(sp, 'w') as f:
