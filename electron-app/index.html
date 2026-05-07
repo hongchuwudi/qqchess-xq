@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QQ Chess Proxy</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <h1 class="title">QQ Chess Proxy</h1>
+      <div class="status-bar">
+        <span id="my-side" class="my-side">--</span>
+        <span id="status-dot" class="dot dot-offline"></span>
+        <span id="status-text" class="status-text">代理未启动</span>
+      </div>
+    </header>
+
+    <section class="stats">
+      <div class="stat-card">
+        <span class="stat-value" id="stat-msgs">0</span>
+        <span class="stat-label">消息数</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="stat-moves">0</span>
+        <span class="stat-label">走子数</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-value" id="stat-sessions">0</span>
+        <span class="stat-label">会话文件</span>
+      </div>
+    </section>
+
+    <section id="engine-panel" class="engine-panel">
+      <div class="engine-header">
+        <div class="engine-title-row">
+          <span id="engine-dot" class="dot dot-offline"></span>
+          <h2 class="engine-name">皮卡鱼引擎</h2>
+          <span id="engine-status-text" class="engine-status-text">未启动</span>
+        </div>
+        <span id="engine-depth" class="engine-depth"></span>
+      </div>
+      <div id="engine-body" class="engine-body" style="display:none">
+        <div class="engine-best">
+          <span class="engine-label">最佳走法</span>
+          <span id="engine-bestmove" class="engine-bestmove">--</span>
+          <span id="engine-bestmove-cn" class="engine-bestmove-cn"></span>
+          <span class="engine-label">评分</span>
+          <span id="engine-score" class="engine-score">--</span>
+        </div>
+        <div class="engine-pv">
+          <span class="engine-label">变例</span>
+          <span id="engine-pv" class="engine-pv-text"></span>
+        </div>
+        <div class="engine-fen-row">
+          <span class="engine-label">FEN</span>
+          <span id="engine-fen" class="engine-fen"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="board-section">
+      <canvas id="board-canvas" width="300" height="330"></canvas>
+    </section>
+
+    <section class="actions">
+      <button id="btn-game" class="btn btn-primary">启动游戏</button>
+      <button id="btn-proxy" class="btn btn-warn">停止代理</button>
+      <button id="btn-restart" class="btn">重启代理</button>
+      <button id="btn-analyze" class="btn btn-accent">立即分析</button>
+      <button id="btn-autoplay" class="btn">⚡ 自动走子</button>
+      <button id="btn-flip" class="btn">翻转棋盘</button>
+      <button id="btn-clear" class="btn">清空日志</button>
+      <button id="btn-sessions" class="btn">会话目录</button>
+    </section>
+
+    <section class="log-section">
+      <div class="log-header">
+        <h2 class="log-title">日志</h2>
+        <div class="log-controls">
+          <label class="filter-label">
+            <input type="checkbox" id="filter-moves" checked>
+            <span>走子</span>
+          </label>
+          <label class="filter-label">
+            <input type="checkbox" id="filter-msgs" checked>
+            <span>消息</span>
+          </label>
+          <span id="log-count" class="log-count">0 条</span>
+        </div>
+      </div>
+      <div id="log-view" class="log-view">
+        <div class="log-empty">等待 mitmproxy 输出...</div>
+      </div>
+    </section>
+
+    <section id="moves-section" class="moves-section" style="display:none">
+      <div class="log-header">
+        <h2 class="log-title">走子记录</h2>
+        <span id="move-count" class="log-count">0</span>
+      </div>
+      <div class="move-columns">
+        <div class="move-col">
+          <div class="move-col-header red">红方</div>
+          <div id="move-list-red" class="move-list-col"></div>
+        </div>
+        <div class="move-col">
+          <div class="move-col-header black">黑方</div>
+          <div id="move-list-black" class="move-list-col"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

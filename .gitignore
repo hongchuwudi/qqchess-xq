@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+data/sessions/
+data/*.har
+node_modules/
+.claude/
+engines/
+qqchess_src/
