@@ -784,6 +784,10 @@ class QQChessWSProxy:
         self.my_seat = None       # nSeatID from our SEND 86004
         self.i_first_side = None  # which seat is red (from RECV 86001 context)
         self.my_camp = None       # 'red' or 'black'
+        self.game_count = 0       # number of completed games
+        self._game_active = False # whether a game is currently in progress
+        self._game_start_seq = 0  # seq when current game started
+        self._consecutive_86006 = 0  # count consecutive 86006 RECV for end detection
 
     def websocket_start(self, flow):
         if 'qqchess' not in flow.request.url:
@@ -876,6 +880,8 @@ class QQChessWSProxy:
                     if self.my_seat is not None:
                         self.my_camp = 'red' if self.my_seat == self.i_first_side else 'black'
                         ctx.log.info(f"  [CAMP] my_seat={self.my_seat} → {self.my_camp}")
+                    if not self._game_active:
+                        self._on_game_begin(self.total)
             except Exception as e:
                 ctx.log.warn(f"  [CTX] 解析失败: {e}")
 
@@ -885,6 +891,9 @@ class QQChessWSProxy:
             try:
                 if msg_id == 86004:
                     ev = parse_request_play(check_body)
+                    # Game is active if we're sending moves
+                    if not self._game_active:
+                        self._on_game_begin(self.total)
                     # Track player's own seat from SEND messages
                     seat_id = ev.get('nSeatID', -1)
                     if seat_id >= 0 and self.my_seat is None:
@@ -954,6 +963,11 @@ class QQChessWSProxy:
             except Exception as e:
                 ctx.log.warn(f"  [GAME] 解析失败: {e}")
 
+        # ---- 对局结束检测 ----
+        if not m.from_client and self._check_game_end(msg_id, direction, encrypted, len(body)):
+            # Game ended — tag moves and reset
+            pass
+
         # 保存解码记录
         dec_rec = {
             'seq': self.total, 'time': ts, 'direction': direction,
@@ -975,10 +989,78 @@ class QQChessWSProxy:
         ctx.log.info(f"[QQ象棋] 断开 总={self.total} SEND={self.sends} RECV={self.recvs} moves={len(self.moves)}")
         if self.moves:
             ctx.log.info(f"[QQ象棋] 走子: {' '.join(m['uci'] for m in self.moves)}")
+        if self._game_active and self.move_n > 0:
+            self._end_game('ws_disconnect')
         self._save()
 
     def done(self):
         self._save()
+
+    # ---- 对局结束检测 ----
+    def _on_game_begin(self, seq):
+        """Mark the start of a new game."""
+        self._game_active = True
+        self._game_start_seq = seq
+        self._consecutive_86006 = 0
+        ctx.log.info(f"[GAME] ====== 对局 #{self.game_count + 1} 开始 (seq={seq}) ======")
+
+    def _on_game_end(self, reason):
+        """Handle game end: save state, reset trackers."""
+        self.game_count += 1
+        moves_in_game = sum(1 for m in self.moves if m.get('game_idx') == self.game_count - 1
+                            if 'game_idx' in m) if self.game_count > 1 else self.move_n
+        ctx.log.info(
+            f"[GAME] ====== 对局 #{self.game_count} 结束 "
+            f"(moves={self.move_n}, reason={reason}) ======"
+        )
+        # Reset per-game state
+        self.move_n = 0
+        self.my_seat = None
+        self.i_first_side = None
+        self.my_camp = None
+        self._game_active = False
+        self._consecutive_86006 = 0
+
+    def _check_game_end(self, msg_id, direction, encrypted, body_size):
+        """Detect game-end signals from server messages.
+
+        Server sends two kinds of end signals:
+          1. 86006 RECV × 2 — game room settle events (contain result data)
+          2. 85075 RECV — data change notification, small (<200B) when game ends
+
+        Pattern observed across all sessions:
+          ...86005 RECV (last move) → 86006 RECV × 2 → 85075 RECV
+        """
+        if not self._game_active:
+            return
+
+        if msg_id == 86005 and direction == 'RECV' and not encrypted:
+            # Track consecutive 86005 for potential game end
+            pass
+
+        if msg_id == 86006 and direction == 'RECV':
+            self._consecutive_86006 += 1
+            if self._consecutive_86006 >= 2 and self.move_n > 0:
+                ctx.log.info(f"  [END] 检测到连续 86006 事件 (对局结算)")
+
+        if msg_id == 85075 and direction == 'RECV' and not encrypted and body_size < 200:
+            self._end_game('85075_end_notify')
+            return True
+
+        if msg_id not in (86005, 86006, 86004):
+            # Non-battle message — reset consecutive counter
+            self._consecutive_86006 = 0
+
+        return False
+
+    def _end_game(self, reason):
+        """Trigger game end cleanup."""
+        # Tag all moves in current game
+        game_idx = self.game_count
+        for m in self.moves:
+            if 'game_idx' not in m:
+                m['game_idx'] = game_idx
+        self._on_game_end(reason)
 
     def _save(self):
         if not self.raw:
@@ -996,6 +1078,12 @@ class QQChessWSProxy:
             with open(p, 'w', encoding='utf-8') as f:
                 json.dump(d, f, ensure_ascii=False, indent=2)
             ctx.log.info(f"[SAVE] {fn} ({len(d)}条)")
+        # Group moves by game
+        game_moves = {}
+        for m in self.moves:
+            gid = m.get('game_idx', 0)
+            game_moves.setdefault(gid, []).append(m['uci'])
+
         sm = {
             'start': self.st.isoformat(), 'end': datetime.now().isoformat(),
             'total': self.total, 'sends': self.sends, 'recvs': self.recvs,
@@ -1005,6 +1093,8 @@ class QQChessWSProxy:
             'my_seat': self.my_seat,
             'i_first_side': self.i_first_side,
             'my_camp': self.my_camp,
+            'game_count': self.game_count,
+            'per_game_moves': {str(k): v for k, v in game_moves.items()},
         }
         sp = os.path.join(out, f'qqchess_summary_{ts}.json')
         with open(sp, 'w') as f:

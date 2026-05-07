@@ -710,6 +710,13 @@ def analyze_session(session_path):
         print(f"   我方阵营: {camp_label} (seat={my_seat}, first_side={i_first_side})")
     elif my_seat is not None:
         print(f"   我方座位: seat={my_seat} (first_side未捕获)")
+    game_count = summary.get('game_count', 0)
+    if game_count > 0:
+        print(f"   完成对局: {game_count} 局")
+        per_game = summary.get('per_game_moves', {})
+        if per_game:
+            for gid, moves in per_game.items():
+                print(f"     第{gid}局: {len(moves)} 步 — {' '.join(moves)}")
     print()
 
     # ---- 时间线 ----
