@@ -613,24 +613,20 @@ function setupIPC() {
   });
 
   ipcMain.handle("detect-python", () => {
-    const { spawnSync } = require("child_process");
-    const pythonCandidates = ["python", "python3", "py"];
-    const mitmCandidates = ["mitmdump"];
+    const { execSync } = require("child_process");
     let pyPath = null, mitmOk = false;
 
-    for (const cmd of pythonCandidates) {
+    for (const cmd of ["python", "python3", "py"]) {
       try {
-        const r = spawnSync(cmd, ["--version"], { stdio: "pipe", timeout: 8000 });
-        if (r.status === 0) { pyPath = cmd; break; }
-      } catch (_) { /* continue */ }
+        execSync(`"${cmd}" --version`, { stdio: "pipe" });
+        pyPath = cmd; break;
+      } catch (_) { /* not found */ }
     }
 
-    for (const cmd of mitmCandidates) {
-      try {
-        const r = spawnSync(cmd, ["--version"], { stdio: "pipe", timeout: 8000 });
-        if (r.status === 0) { mitmOk = true; break; }
-      } catch (_) { /* continue */ }
-    }
+    try {
+      execSync("mitmdump --version", { stdio: "pipe" });
+      mitmOk = true;
+    } catch (_) { /* not found */ }
 
     return { py: !!pyPath, pyPath, mitmproxy: mitmOk };
   });
