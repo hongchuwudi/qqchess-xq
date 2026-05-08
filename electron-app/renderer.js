@@ -42,6 +42,13 @@ const dom = {
   engineFen: $("#engine-fen"),
   boardCanvas: $("#board-canvas"),
   btnCopyLog: $("#btn-copy-log"),
+  btnSettings: $("#btn-settings"),
+  // Setup modal
+  setupOverlay: $("#setup-overlay"),
+  setupDir: $("#setup-dir"),
+  btnSetupClose: $("#btn-setup-close"),
+  btnSetupChoose: $("#btn-setup-choose"),
+  btnSetupRetry: $("#btn-setup-retry"),
 };
 
 // ── GameStateTracker — Chinese chess board state ────────────────────────
@@ -748,6 +755,55 @@ dom.btnCopyLog.addEventListener("click", () => {
   });
 });
 
+// ── Settings panel ─────────────────────────────────────────────────────
+function setupDot(id, cls) {
+  const el = document.getElementById(id);
+  if (el) el.className = "setup-dot " + cls;
+}
+
+async function openSetupPanel() {
+  dom.setupOverlay.style.display = "flex";
+  dom.setupDir.textContent = await window.qqchess.getDataDir();
+  runSetupDetection();
+}
+
+async function runSetupDetection() {
+  setupDot("dot-py", "pending"); setupDot("dot-mitm", "pending");
+  document.getElementById("txt-py").textContent = "检测中...";
+  document.getElementById("txt-mitm").textContent = "等待 Python...";
+  document.getElementById("guide-py").style.display = "none";
+  document.getElementById("guide-mitm").style.display = "none";
+
+  const res = await window.qqchess.detectPython();
+  if (res.py) {
+    setupDot("dot-py", "ok");
+    document.getElementById("txt-py").textContent = res.pyPath || "Python 已就绪";
+    if (res.mitmproxy) {
+      setupDot("dot-mitm", "ok");
+      document.getElementById("txt-mitm").textContent = "mitmproxy 已安装";
+    } else {
+      setupDot("dot-mitm", "fail");
+      document.getElementById("txt-mitm").textContent = "mitmproxy 未安装";
+      document.getElementById("guide-mitm").style.display = "block";
+    }
+  } else {
+    setupDot("dot-py", "fail");
+    document.getElementById("txt-py").textContent = "Python 未安装或未添加到 PATH";
+    document.getElementById("guide-py").style.display = "block";
+    setupDot("dot-mitm", "fail");
+    document.getElementById("txt-mitm").textContent = "需要先安装 Python";
+  }
+}
+
+dom.btnSettings.addEventListener("click", openSetupPanel);
+dom.btnSetupClose.addEventListener("click", () => { dom.setupOverlay.style.display = "none"; });
+dom.setupOverlay.addEventListener("click", (e) => { if (e.target === dom.setupOverlay) dom.setupOverlay.style.display = "none"; });
+dom.btnSetupChoose.addEventListener("click", async () => {
+  const dir = await window.qqchess.chooseDataDir();
+  if (dir) dom.setupDir.textContent = dir;
+});
+dom.btnSetupRetry.addEventListener("click", runSetupDetection);
+
 // ── Session file count + move restore ───────────────────────────────────
 let _lastLoadedMovesFile = null;
 
@@ -930,6 +986,8 @@ window.qqchess.onLogLine((data) => {
     });
   }
 });
+
+window.qqchess.onShowSetup(() => openSetupPanel());
 
 window.qqchess.onProxyStatus((status) => updateStatus(status));
 

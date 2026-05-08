@@ -613,7 +613,6 @@ function setupIPC() {
   });
 
   ipcMain.handle("detect-python", () => {
-    if (process.argv.includes("--setup")) return { py: false, pyPath: null, mitmproxy: false };
     const { execSync } = require("child_process");
     let pyPath = null, mitmOk = false;
 
@@ -676,27 +675,13 @@ app.whenReady().then(async () => {
   // Wait for renderer to be ready
   await new Promise((r) => controlWindow.webContents.on("did-finish-load", r));
 
-  // First launch (or --setup flag): show setup window
-  if (!fs.existsSync(CONFIG_PATH) || process.argv.includes("--setup")) {
-    await new Promise((resolve) => {
-      const setupWin = new BrowserWindow({
-        width: 460, height: 520, resizable: false,
-        title: "QQ象棋协议分析器 — 环境检测",
-        webPreferences: { nodeIntegration: true, contextIsolation: false },
-      });
-      setupWin.loadFile(path.join(__dirname, "setup.html"));
-      setupWin.setMenuBarVisibility(false);
-      ipcMain.once("setup-done", (_event, dataDir) => {
-        if (dataDir && dataDir !== SESSIONS_DIR) {
-          fs.mkdirSync(dataDir, { recursive: true });
-          SESSIONS_DIR = dataDir;
-        }
-        saveConfig("dataDir", SESSIONS_DIR);
-        addLog("[main] 数据目录: " + SESSIONS_DIR);
-        setupWin.close();
-        resolve();
-      });
-      setupWin.on("closed", () => resolve());
+  // First launch: show setup panel in main window
+  if (!fs.existsSync(CONFIG_PATH)) {
+    // Use default data dir for now, user can change in setup panel
+    saveConfig("dataDir", SESSIONS_DIR);
+    // Tell renderer to show setup panel after it loads
+    controlWindow.webContents.on("did-finish-load", () => {
+      setTimeout(() => controlWindow.webContents.send("show-setup"), 1000);
     });
   }
 

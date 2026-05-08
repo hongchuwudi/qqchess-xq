@@ -5,8 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev",
-    "setup": "electron . --setup"
+    "dev": "electron . --dev"
   },
   "author": "",
   "license": "ISC",

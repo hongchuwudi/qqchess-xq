@@ -79,6 +79,7 @@
       <button id="btn-flip" class="btn">翻转棋盘</button>
       <button id="btn-clear" class="btn">清空日志</button>
       <button id="btn-sessions" class="btn">会话目录</button>
+      <button id="btn-settings" class="btn" style="border-color:#7c4dff;color:#b39ddb">设置</button>
     </section>
 
     <section class="log-section">
@@ -118,6 +119,33 @@
         </div>
       </div>
     </section>
+    <!-- Setup modal -->
+    <div id="setup-overlay" style="display:none">
+      <div id="setup-panel">
+        <div class="setup-header">
+          <span style="font-size:15px;font-weight:600;color:#4fc3f7">环境检测 &amp; 数据设置</span>
+          <button id="btn-setup-close" style="background:none;border:none;color:#888;font-size:18px;cursor:pointer">&times;</button>
+        </div>
+        <div class="setup-row"><span class="setup-dot" id="dot-py"></span><span style="flex:1" id="txt-py">检测中...</span></div>
+        <div class="setup-guide" id="guide-py">
+          Python 是代理工具的运行环境。<br>
+          下载 <a href="#" class="setup-link">Python 3.11.9</a>（安装时勾选 Add Python to PATH）
+        </div>
+        <div class="setup-row"><span class="setup-dot" id="dot-mitm"></span><span style="flex:1" id="txt-mitm">等待 Python...</span></div>
+        <div class="setup-guide" id="guide-mitm">
+          mitmproxy 是 HTTPS 抓包工具（Python 依赖）。<br>
+          命令行执行：<code>pip install mitmproxy</code>
+        </div>
+        <div class="setup-row" style="align-items:flex-start">
+          <span style="color:#888;font-size:11px;min-width:70px">数据目录</span>
+          <span style="flex:1;font-size:11px;font-family:Consolas,monospace;color:#81d4fa;word-break:break-all" id="setup-dir">--</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn" id="btn-setup-choose" style="font-size:11px;padding:4px 8px">选择目录</button>
+          <button class="btn" id="btn-setup-retry" style="font-size:11px;padding:4px 8px">重新检测</button>
+        </div>
+      </div>
+    </div>
     </div><!-- end control-pane -->
   </div>
 

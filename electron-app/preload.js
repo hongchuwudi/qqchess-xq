@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("qqchess", {
   getDataStats: () => ipcRenderer.invoke("get-data-stats"),
   getDataDir: () => ipcRenderer.invoke("get-data-dir"),
   chooseDataDir: () => ipcRenderer.invoke("choose-data-dir"),
+  detectPython: () => ipcRenderer.invoke("detect-python"),
 
   // ── Engine (Pikafish) ──
   analyzePosition: (fen, moveList) => ipcRenderer.invoke("analyze-position", fen, moveList),
@@ -29,6 +30,11 @@ contextBridge.exposeInMainWorld("qqchess", {
     const handler = (_event, data) => callback(data);
     ipcRenderer.on("log-line", handler);
     return () => ipcRenderer.removeListener("log-line", handler);
+  },
+  onShowSetup: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on("show-setup", handler);
+    return () => ipcRenderer.removeListener("show-setup", handler);
   },
   onProxyStatus: (callback) => {
     const handler = (_event, data) => callback(data);

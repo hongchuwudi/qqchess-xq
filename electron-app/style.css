@@ -424,3 +424,23 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #3a3a6a; }
+
+/* ── Setup modal ──────────────────────────────────────────────── */
+#setup-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6); z-index: 999;
+  display: flex; align-items: center; justify-content: center;
+}
+#setup-panel {
+  background: #16213e; border: 1px solid #2a2a4a; border-radius: 10px;
+  padding: 20px; width: 380px; display: flex; flex-direction: column; gap: 12px;
+}
+.setup-header { display: flex; justify-content: space-between; align-items: center; }
+.setup-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.setup-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.setup-dot.pending { background: #888; }
+.setup-dot.ok { background: #66bb6a; }
+.setup-dot.fail { background: #ef5350; }
+.setup-guide { font-size: 11px; color: #888; line-height: 1.6; padding-left: 16px; display: none; }
+.setup-guide code { background: #0f0f23; padding: 1px 5px; border-radius: 3px; }
+.setup-link { color: #4fc3f7; }
