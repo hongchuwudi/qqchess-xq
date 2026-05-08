@@ -504,6 +504,7 @@ function refreshMoveList() {
     `<div class="move-col-item${mv.sent ? ' mine' : ' opp'}"><span class="mv-num">${i + 1}.</span>${mv.cn}</div>`
   ).join("");
   dom.moveCount.textContent = `${parsedMoves.length}`;
+  dom.statMoves.textContent = parsedMoves.length;
 }
 
 function updateMySide() {
@@ -517,10 +518,6 @@ function updateStatus(status) {
   dom.statusDot.className = "dot " + (proxyOnline ? "dot-online" : "dot-offline");
   dom.statusText.textContent = proxyOnline ? "代理运行中" : "代理未启动";
   dom.statusPort.textContent = proxyOnline ? `127.0.0.1:${status.port}` : "";
-
-  if (status.stats) {
-    dom.statMoves.textContent = status.stats.moves;
-  }
 
   dom.btnProxy.textContent = proxyOnline ? "停止代理" : "启动代理";
   dom.btnProxy.classList.toggle("btn-warn", proxyOnline);
