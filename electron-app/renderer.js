@@ -232,10 +232,11 @@ let _lastSentUci = null; // UCI of last SENT move, for echo filtering
 let _lastFrom = null, _lastTo = null;
 let _bestFrom = null, _bestTo = null;
 
-// Proxy + Engine both use row 0 = Red bottom, but our FEN has row 0 = Black top.
-// Convert UCI: proxy_row → FEN_row = 9 - proxy_row
+// Proxy uses player-relative coords (row 5-9 = player pieces).
+// Red user: proxy == FEN (red bottom). Black user: need 9-row flip.
 function proxyToFenUci(uci) {
   if (!uci || uci.length < 4) return uci;
+  if (_userSide !== "b") return uci;
   const fr = parseInt(uci[1]), tr = parseInt(uci[3]);
   if (isNaN(fr) || isNaN(tr)) return uci;
   return uci[0] + (9 - fr) + uci[2] + (9 - tr) + uci.substring(4);
