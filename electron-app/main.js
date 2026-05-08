@@ -613,6 +613,7 @@ function setupIPC() {
   });
 
   ipcMain.handle("detect-python", () => {
+    if (process.argv.includes("--setup")) return { py: false, pyPath: null, mitmproxy: false };
     const { execSync } = require("child_process");
     let pyPath = null, mitmOk = false;
 
@@ -675,8 +676,8 @@ app.whenReady().then(async () => {
   // Wait for renderer to be ready
   await new Promise((r) => controlWindow.webContents.on("did-finish-load", r));
 
-  // First launch or env not ready: show setup window
-  if (!fs.existsSync(CONFIG_PATH)) {
+  // First launch (or --setup flag): show setup window
+  if (!fs.existsSync(CONFIG_PATH) || process.argv.includes("--setup")) {
     await new Promise((resolve) => {
       const setupWin = new BrowserWindow({
         width: 460, height: 520, resizable: false,
