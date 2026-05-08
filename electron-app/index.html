@@ -10,7 +10,7 @@
   <div id="app">
     <!-- Game webview: left 2/3 -->
     <div id="game-pane">
-      <webview id="game-webview" src="about:blank"
+      <webview id="game-webview" src="https://h5login.qqchess.qq.com/"
         allowpopups
         style="width:100%;height:100%">
       </webview>
@@ -29,16 +29,8 @@
 
     <section class="stats">
       <div class="stat-card">
-        <span class="stat-value" id="stat-msgs">0</span>
-        <span class="stat-label">消息数</span>
-      </div>
-      <div class="stat-card">
         <span class="stat-value" id="stat-moves">0</span>
-        <span class="stat-label">走子数</span>
-      </div>
-      <div class="stat-card">
-        <span class="stat-value" id="stat-sessions">0</span>
-        <span class="stat-label">会话文件</span>
+        <span class="stat-label">走子步数</span>
       </div>
     </section>
 
@@ -94,7 +86,7 @@
             <span>走子</span>
           </label>
           <label class="filter-label">
-            <input type="checkbox" id="filter-msgs" checked>
+            <input type="checkbox" id="filter-msgs">
             <span>消息</span>
           </label>
           <span id="log-count" class="log-count">0 条</span>

@@ -20,7 +20,7 @@ let gameWebContents = null;
 let logs = [];
 let moves = [];
 let proxyRunning = false;
-let sessionStats = { total: 0, sends: 0, recvs: 0, moves: 0 };
+let sessionStats = { moves: 0 };
 let pikafish = null;
 
 // ── Log management ──────────────────────────────────────────────────────
@@ -59,10 +59,7 @@ function addLog(msg) {
   logs.push({ time: new Date().toISOString(), text: msg });
   if (logs.length > MAX_LOGS) logs = logs.slice(-MAX_LOGS);
 
-  // Incremental stats — avoids re-scanning the full log array each time
-  if (msg.match(/\[[↑↓→←]\]\s*#\d{4}/)) {
-    sessionStats.total++;
-  }
+  // Incremental stats for move count
   if (msg.includes(">>> [MOVE") || msg.includes(">>> [MOVE SENT")) {
     sessionStats.moves++;
   }
@@ -406,7 +403,7 @@ function setupIPC() {
 
   ipcMain.handle("clear-logs", () => {
     logs = [];
-    sessionStats = { total: 0, sends: 0, recvs: 0, moves: 0 };
+    sessionStats = { moves: 0 };
     moves = [];
     notifyStatus();
     return true;

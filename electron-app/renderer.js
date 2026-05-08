@@ -6,9 +6,7 @@ const dom = {
   mySide: $("#my-side"),
   statusDot: $("#status-dot"),
   statusText: $("#status-text"),
-  statMsgs: $("#stat-msgs"),
   statMoves: $("#stat-moves"),
-  statSessions: $("#stat-sessions"),
   // Log
   logView: $("#log-view"),
   logCount: $("#log-count"),
@@ -521,7 +519,6 @@ function updateStatus(status) {
   dom.statusPort.textContent = proxyOnline ? `127.0.0.1:${status.port}` : "";
 
   if (status.stats) {
-    dom.statMsgs.textContent = status.stats.total;
     dom.statMoves.textContent = status.stats.moves;
   }
 
@@ -706,7 +703,6 @@ dom.btnClear.addEventListener("click", async () => {
   redrawBoard();
   updateEngineUI(null);
   dom.engineFen.textContent = INITIAL_FEN;
-  dom.statMsgs.textContent = "0";
   dom.statMoves.textContent = "0";
 });
 
@@ -730,7 +726,6 @@ let _lastLoadedMovesFile = null;
 async function restoreMovesFromSession() {
   try {
     const files = await window.qqchess.getSessionFiles();
-    dom.statSessions.textContent = files.length;
     // Find the latest moves file
     const movesFiles = files.filter((f) => f.name.includes("_moves_")).sort((a, b) => b.name.localeCompare(a.name));
     if (movesFiles.length === 0) return;
@@ -781,7 +776,6 @@ async function restoreMovesFromSession() {
 async function refreshSessionCount() {
   try {
     const files = await window.qqchess.getSessionFiles();
-    dom.statSessions.textContent = files.length;
   } catch (e) { /* ignore */ }
 }
 
