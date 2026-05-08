@@ -1002,6 +1002,7 @@ class QQChessWSProxy:
         self._game_active = True
         self._game_start_seq = seq
         self._consecutive_86006 = 0
+        self.move_n = 0
         ctx.log.info(f"[GAME] ====== 对局 #{self.game_count + 1} 开始 (seq={seq}) ======")
 
     def _on_game_end(self, reason):
