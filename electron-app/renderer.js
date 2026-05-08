@@ -40,6 +40,7 @@ const dom = {
   enginePv: $("#engine-pv"),
   engineFen: $("#engine-fen"),
   boardCanvas: $("#board-canvas"),
+  btnCopyLog: $("#btn-copy-log"),
 };
 
 // ── GameStateTracker — Chinese chess board state ────────────────────────
@@ -231,10 +232,13 @@ let _lastSentUci = null; // UCI of last SENT move, for echo filtering
 let _lastFrom = null, _lastTo = null;
 let _bestFrom = null, _bestTo = null;
 
-// Proxy UCI is already in FEN convention (row 0 = Black top, row 9 = Red bottom).
-// No coordinate conversion needed.
+// Proxy + Engine both use row 0 = Red bottom, but our FEN has row 0 = Black top.
+// Convert UCI: proxy_row → FEN_row = 9 - proxy_row
 function proxyToFenUci(uci) {
-  return uci;
+  if (!uci || uci.length < 4) return uci;
+  const fr = parseInt(uci[1]), tr = parseInt(uci[3]);
+  if (isNaN(fr) || isNaN(tr)) return uci;
+  return uci[0] + (9 - fr) + uci[2] + (9 - tr) + uci.substring(4);
 }
 
 function setLastMove(uci) {
@@ -313,7 +317,7 @@ function redrawBoard() {
   const blackLabels = "1 2 3 4 5 6 7 8 9".split(" ");
   for (let i = 0; i < 9; i++) {
     const topLabel = _userSide === "b" ? redLabels[8 - i] : blackLabels[i];
-    const botLabel = _userSide === "b" ? blackLabels[i] : redLabels[i];
+    const botLabel = _userSide === "b" ? blackLabels[i] : redLabels[8 - i];
     ctx.fillText(topLabel, bx(i), by(0) - 5);
     ctx.fillText(botLabel, bx(i), by(9) + 14);
   }
@@ -706,6 +710,18 @@ dom.btnClear.addEventListener("click", async () => {
 });
 
 dom.btnSessions.addEventListener("click", () => window.qqchess.openSessionsDir());
+
+dom.btnCopyLog.addEventListener("click", () => {
+  const visible = getVisibleLogs();
+  const text = visible.map((e) => e.text).join("\n");
+  navigator.clipboard.writeText(text).then(() => {
+    dom.btnCopyLog.textContent = "已复制!";
+    setTimeout(() => { dom.btnCopyLog.textContent = "复制日志"; }, 1500);
+  }).catch(() => {
+    dom.btnCopyLog.textContent = "失败";
+    setTimeout(() => { dom.btnCopyLog.textContent = "复制日志"; }, 1500);
+  });
+});
 
 // ── Session file count + move restore ───────────────────────────────────
 let _lastLoadedMovesFile = null;
