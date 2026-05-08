@@ -727,7 +727,7 @@ async function restoreMovesFromSession() {
     const movesFiles = files.filter((f) => f.name.includes("_moves_")).sort((a, b) => b.name.localeCompare(a.name));
     if (movesFiles.length === 0) return;
     const latest = movesFiles[0];
-    if (latest.name === _lastLoadedMovesFile) return;
+    if (latest.name === _lastLoadedMovesFile && parsedMoves.length > 0) return;
     _lastLoadedMovesFile = latest.name;
 
     const data = await window.qqchess.readSessionFile(latest.name);
