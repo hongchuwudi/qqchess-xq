@@ -1001,7 +1001,7 @@ class QQChessWSProxy:
         ctx.log.info(f"[QQ象棋] 断开 总={self.total} SEND={self.sends} RECV={self.recvs} moves={len(self.moves)}")
         if self.moves:
             ctx.log.info(f"[QQ象棋] 走子: {' '.join(m['uci'] for m in self.moves)}")
-        self._save()  # save state on disconnect (don't end game — may reconnect)
+        self._save(force=True)  # save state on disconnect (don't end game — may reconnect)
 
     def done(self):
         self._save()
@@ -1073,12 +1073,13 @@ class QQChessWSProxy:
                 m['game_idx'] = game_idx
         self._on_game_end(reason)
 
-    def _save(self):
-        # Throttle: save at most once per 3 seconds
-        now = datetime.now()
-        if hasattr(self, '_last_save') and (now - self._last_save).total_seconds() < 3:
-            return
-        self._last_save = now
+    def _save(self, force=False):
+        # Throttle: save at most once per 3 seconds (unless forced)
+        if not force:
+            now = datetime.now()
+            if hasattr(self, '_last_save') and (now - self._last_save).total_seconds() < 3:
+                return
+            self._last_save = now
         if not self.raw:
             return
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
