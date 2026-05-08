@@ -429,7 +429,7 @@ function classifyLine(text) {
   if (text.includes("ERROR") || text.includes("[err]") || text.includes("失败") || text.includes("FAILED")) return "error";
   if (text.startsWith("[main]")) return "system";
   if (text.includes("[SAVE]") || text.includes("[QQ象棋] 断开")) return "gamedone";
-  if (text.match(/^\[[↑↓→←]\]/)) return "msg";
+  if (text.match(/\[[↑↓→←]\]/)) return "msg";
   return "";
 }
 

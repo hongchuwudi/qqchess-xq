@@ -60,7 +60,7 @@ function addLog(msg) {
   if (logs.length > MAX_LOGS) logs = logs.slice(-MAX_LOGS);
 
   // Incremental stats — avoids re-scanning the full log array each time
-  if (msg.match(/^\[[↑↓→←]\]\s*#\d{4}/)) {
+  if (msg.match(/\[[↑↓→←]\]\s*#\d{4}/)) {
     sessionStats.total++;
   }
   if (msg.includes(">>> [MOVE") || msg.includes(">>> [MOVE SENT")) {
