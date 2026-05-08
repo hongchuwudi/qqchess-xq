@@ -723,11 +723,11 @@ let _lastLoadedMovesFile = null;
 async function restoreMovesFromSession() {
   try {
     const files = await window.qqchess.getSessionFiles();
-    // Find the latest moves file
     const movesFiles = files.filter((f) => f.name.includes("_moves_")).sort((a, b) => b.name.localeCompare(a.name));
-    if (movesFiles.length === 0) return;
+    if (movesFiles.length === 0) { console.log('[restore] no moves files'); return; }
     const latest = movesFiles[0];
-    if (latest.name === _lastLoadedMovesFile && parsedMoves.length > 0) return;
+    if (latest.name === _lastLoadedMovesFile && parsedMoves.length > 0) { console.log('[restore] already loaded'); return; }
+    console.log('[restore] loading', latest.name, 'moves:', parsedMoves.length);
     _lastLoadedMovesFile = latest.name;
 
     const data = await window.qqchess.readSessionFile(latest.name);
@@ -766,8 +766,9 @@ async function restoreMovesFromSession() {
     redrawBoard();
     dom.engineFen.textContent = _currentFen;
     dom.statMoves.textContent = parsedMoves.length;
+    console.log('[restore] done, moves:', parsedMoves.length);
     if (_currentFen !== INITIAL_FEN) scheduleAnalysis(_currentFen);
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.log('[restore] error:', e.message); }
 }
 
 async function refreshSessionCount() {
