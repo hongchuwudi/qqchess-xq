@@ -877,8 +877,8 @@ window.qqchess.onLogLine((data) => {
     restoreMovesFromSession();
   }
 
-  // Clear engine + moves when game ends (websocket disconnect or game over)
-  if (data.text.includes("[QQ象棋] 断开") || data.text.includes("[GAME] ====== 对局") && data.text.includes("结束")) {
+  // Clear engine + moves only on genuine game end (not disconnect)
+  if (data.text.includes("[GAME] ====== 对局") && data.text.includes("结束")) {
     parsedMoves = [];
     GameStateTracker.reset();
     _currentFen = INITIAL_FEN;
