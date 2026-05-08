@@ -870,22 +870,17 @@ class QQChessWSProxy:
             except Exception as e:
                 ctx.log.error(f"  [DEC] 失败: {e}")
 
-        # ---- 游戏上下文 (86001) — 提取 iFirstSide ----
+        # ---- 游戏上下文 (86001) — 仅日志参考 (body是TResponseSitDown, field2是tableID) ----
         check_body_ctx = plain if encrypted else body
         if msg_id == 86001 and not m.from_client and check_body_ctx:
             try:
                 ctx2 = parse_game_context(check_body_ctx)
-                if ctx2.get('iFirstSide', -1) >= 0:
-                    self.i_first_side = ctx2['iFirstSide']
-                    ctx.log.info(
-                        f"  [CTX] iFirstSide={self.i_first_side}  "
-                        f"qm={ctx2.get('qm')}  hxb={ctx2.get('hxb')}"
-                    )
-                    if self.my_seat is not None:
-                        self.my_camp = 'red' if self.my_seat == self.i_first_side else 'black'
-                        ctx.log.info(f"  [CAMP] my_seat={self.my_seat} → {self.my_camp}")
-                    if not self._game_active:
-                        self._on_game_begin(self.total)
+                ctx.log.info(
+                    f"  [86001] tableID={ctx2.get('iFirstSide')}  "
+                    f"qm={ctx2.get('qm')}  hxb={ctx2.get('hxb')}"
+                )
+                if not self._game_active:
+                    self._on_game_begin(self.total)
             except Exception as e:
                 ctx.log.warn(f"  [CTX] 解析失败: {e}")
 
@@ -903,9 +898,6 @@ class QQChessWSProxy:
                     if seat_id >= 0 and self.my_seat is None:
                         self.my_seat = seat_id
                         ctx.log.info(f"  [SEAT] my_seat={self.my_seat}")
-                        if self.i_first_side is not None:
-                            self.my_camp = 'red' if self.my_seat == self.i_first_side else 'black'
-                            ctx.log.info(f"  [CAMP] → {self.my_camp}")
                     ctx.log.info(
                         f"  [SEND] cmdID={ev['nCmdID']}  "
                         f"room={ev['nRoomID']}  table={ev['nTableID']}  "
@@ -942,10 +934,14 @@ class QQChessWSProxy:
                         self.move_n += 1
                         event_id = ev.get('nEventID', ev.get('nCmdID', 0))
                         move_seat = ev.get('nSeatID', -1)
-                        # Determine which camp made this move
-                        if self.my_camp and move_seat >= 0:
-                            mover_camp = 'red' if move_seat == self.i_first_side else 'black'
-                            is_own = mover_camp == self.my_camp
+                        # Determine camp: Red always moves first in Chinese chess
+                        if self.my_camp is None and self.move_n == 1:
+                            self.my_camp = 'red' if direction == 'SEND' else 'black'
+                            ctx.log.info(f"  [CAMP] first move is {direction} → {self.my_camp}")
+                        if self.my_camp:
+                            opp_camp = 'red' if self.my_camp == 'black' else 'black'
+                            mover_camp = self.my_camp if direction == 'SEND' else opp_camp
+                            is_own = (direction == 'SEND')
                         else:
                             mover_camp = None
                             is_own = None
