@@ -262,8 +262,8 @@ function setBestMove(uci) {
   }
 }
 
-// Coordinate helper — flips board when user is Black
-function bx(c) { return _userSide === "b" ? ML + (8 - c) * DX : ML + c * DX; }
+// Coordinate helpers — FEN col 0=a is always player's right side
+function bx(c) { return ML + (8 - c) * DX; }
 function by(r) { return _userSide === "b" ? MT + (9 - r) * DY : MT + r * DY; }
 
 function redrawBoard() {
@@ -317,8 +317,8 @@ function redrawBoard() {
   const redLabels = "九八七六五四三二一";
   const blackLabels = "1 2 3 4 5 6 7 8 9".split(" ");
   for (let i = 0; i < 9; i++) {
-    const topLabel = _userSide === "b" ? redLabels[8 - i] : blackLabels[i];
-    const botLabel = _userSide === "b" ? blackLabels[i] : redLabels[8 - i];
+    const topLabel = _userSide === "b" ? redLabels[8 - i] : blackLabels[8 - i];
+    const botLabel = _userSide === "b" ? blackLabels[i] : redLabels[i];
     ctx.fillText(topLabel, bx(i), by(0) - 5);
     ctx.fillText(botLabel, bx(i), by(9) + 14);
   }
