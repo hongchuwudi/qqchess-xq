@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld("qqchess", {
   getSessionFiles: () => ipcRenderer.invoke("get-session-files"),
   readSessionFile: (filename) => ipcRenderer.invoke("read-session-file", filename),
   openSessionsDir: () => ipcRenderer.invoke("open-sessions-dir"),
+  getDataStats: () => ipcRenderer.invoke("get-data-stats"),
+  getDataDir: () => ipcRenderer.invoke("get-data-dir"),
+  chooseDataDir: () => ipcRenderer.invoke("choose-data-dir"),
 
   // ── Engine (Pikafish) ──
   analyzePosition: (fen, moveList) => ipcRenderer.invoke("analyze-position", fen, moveList),

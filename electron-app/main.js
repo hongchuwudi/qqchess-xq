@@ -10,7 +10,18 @@ const PROXY_HOST = "127.0.0.1";
 const PROXY_PORT = 8888;
 const PROXY_URL = `http://${PROXY_HOST}:${PROXY_PORT}`;
 const GAME_URL = "https://h5login.qqchess.qq.com/";
-const SESSIONS_DIR = (() => {
+const CONFIG_PATH = path.join(app.getPath("userData"), "config.json");
+let SESSIONS_DIR = (() => {
+  // Try to load user's previous choice
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+      if (cfg.dataDir && fs.existsSync(cfg.dataDir)) {
+        return cfg.dataDir;
+      }
+    }
+  } catch (_) { /* ignore */ }
+  // Default: userData/sessions (packaged) or project/data/sessions (dev)
   const p = app.isPackaged
     ? path.join(app.getPath("userData"), "sessions")
     : path.join(__dirname, "..", "data", "sessions");
@@ -18,6 +29,31 @@ const SESSIONS_DIR = (() => {
   return p;
 })();
 const MAX_LOGS = 500;
+const MAX_DATA_SIZE_MB = 500;
+
+function saveConfig(key, value) {
+  try {
+    const cfg = fs.existsSync(CONFIG_PATH) ? JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) : {};
+    cfg[key] = value;
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf-8");
+  } catch (_) { /* ignore */ }
+}
+
+function getDataDirStats() {
+  try {
+    let totalSize = 0, fileCount = 0;
+    const walk = (dir) => {
+      for (const f of fs.readdirSync(dir)) {
+        const fp = path.join(dir, f);
+        const s = fs.statSync(fp);
+        if (s.isDirectory()) walk(fp);
+        else { totalSize += s.size; fileCount++; }
+      }
+    };
+    if (fs.existsSync(SESSIONS_DIR)) walk(SESSIONS_DIR);
+    return { sizeMB: (totalSize / 1024 / 1024).toFixed(1), fileCount };
+  } catch (_) { return { sizeMB: "0.0", fileCount: 0 }; }
+}
 
 // Resolve paths for dev (__dirname) vs packaged (process.resourcesPath)
 function _resPath(...parts) {
@@ -586,6 +622,27 @@ function setupIPC() {
       return false;
     }
   });
+
+  ipcMain.handle("get-data-stats", () => getDataDirStats());
+
+  ipcMain.handle("get-data-dir", () => SESSIONS_DIR);
+
+  ipcMain.handle("choose-data-dir", async () => {
+    const result = await dialog.showOpenDialog(controlWindow, {
+      title: "选择对局数据保存目录",
+      message: "对局走子记录、会话日志将保存在此目录。\n这些是临时数据文件，可随时清理。",
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      const newDir = path.join(result.filePaths[0], "QQ象棋数据");
+      fs.mkdirSync(newDir, { recursive: true });
+      SESSIONS_DIR = newDir;
+      saveConfig("dataDir", newDir);
+      addLog("[main] 数据目录已更改为: " + newDir);
+      return newDir;
+    }
+    return null;
+  });
 }
 
 // ── App lifecycle ───────────────────────────────────────────────────────
@@ -606,8 +663,35 @@ app.whenReady().then(async () => {
   // Create control window FIRST so engine/proxy logs are visible in real time
   createControlWindow();
 
-  // Wait for renderer to be ready before starting engine (so IPC pushes land)
+  // Wait for renderer to be ready
   await new Promise((r) => controlWindow.webContents.on("did-finish-load", r));
+
+  // First launch: ask user to choose data directory
+  if (!fs.existsSync(CONFIG_PATH)) {
+    const { response } = await dialog.showMessageBox(controlWindow, {
+      type: "info",
+      title: "选择数据保存位置",
+      message: "对局走子记录、会话日志需要保存到本地目录。\n\n这些是临时数据文件，可随时清理。",
+      buttons: ["选择目录", "使用默认位置"],
+      defaultId: 0,
+    });
+    if (response === 0) {
+      const result = await dialog.showOpenDialog(controlWindow, {
+        title: "选择数据保存目录",
+        properties: ["openDirectory", "createDirectory"],
+      });
+      if (!result.canceled && result.filePaths.length > 0) {
+        const newDir = path.join(result.filePaths[0], "QQ象棋数据");
+        fs.mkdirSync(newDir, { recursive: true });
+        SESSIONS_DIR = newDir;
+        saveConfig("dataDir", newDir);
+      }
+    }
+    if (!fs.existsSync(CONFIG_PATH)) {
+      saveConfig("dataDir", SESSIONS_DIR);
+    }
+    addLog("[main] 数据目录: " + SESSIONS_DIR);
+  }
 
   // Start Pikafish engine
   pikafish = new PikafishBridge(ENGINE_DIR);

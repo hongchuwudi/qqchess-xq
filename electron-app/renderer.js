@@ -7,6 +7,9 @@ const dom = {
   statusDot: $("#status-dot"),
   statusText: $("#status-text"),
   statMoves: $("#stat-moves"),
+  statDataSize: $("#stat-data-size"),
+  statDataLabel: $("#stat-data-label"),
+  statDataCard: $("#stat-data-card"),
   // Log
   logView: $("#log-view"),
   logCount: $("#log-count"),
@@ -506,6 +509,35 @@ function refreshMoveList() {
   dom.moveCount.textContent = `${parsedMoves.length}`;
   dom.statMoves.textContent = parsedMoves.length;
 }
+
+async function refreshDataStats() {
+  try {
+    const stats = await window.qqchess.getDataStats();
+    dom.statDataSize.textContent = stats.sizeMB + " MB";
+    dom.statDataLabel.textContent = stats.fileCount + " 文件";
+    if (parseFloat(stats.sizeMB) > 500) {
+      dom.statDataCard.style.background = "rgba(255,112,67,0.15)";
+      dom.statDataLabel.textContent = stats.fileCount + " 文件 ⚠";
+    } else {
+      dom.statDataCard.style.background = "";
+    }
+  } catch (_) { /* ignore */ }
+}
+
+async function refreshDataDir() {
+  try {
+    const dir = await window.qqchess.getDataDir();
+    dom.statDataCard.title = dir + " (点击更改)";
+  } catch (_) { /* ignore */ }
+}
+
+dom.statDataCard.addEventListener("click", async () => {
+  const dir = await window.qqchess.getDataDir();
+  const ok = confirm("数据目录: " + dir + "\n\n是否更换数据保存位置？\n(对局数据为临时文件，可随时清理)");
+  if (!ok) return;
+  const newDir = await window.qqchess.chooseDataDir();
+  if (newDir) refreshDataDir();
+});
 
 function updateMySide() {
   if (!_userSide) { dom.mySide.textContent = "--"; dom.mySide.className = "my-side"; return; }
@@ -1015,6 +1047,10 @@ async function init() {
 
   refreshSessionCount();
   if (parsedMoves.length === 0) await restoreMovesFromSession();
+
+  refreshDataDir();
+  refreshDataStats();
+  setInterval(refreshDataStats, 30000);  // update every 30s
 
   // Show initial FEN and board
   dom.engineFen.textContent = _currentFen;
