@@ -10,7 +10,13 @@ const PROXY_HOST = "127.0.0.1";
 const PROXY_PORT = 8888;
 const PROXY_URL = `http://${PROXY_HOST}:${PROXY_PORT}`;
 const GAME_URL = "https://h5login.qqchess.qq.com/";
-const SESSIONS_DIR = path.join(__dirname, "..", "data", "sessions");
+const SESSIONS_DIR = (() => {
+  const p = app.isPackaged
+    ? path.join(app.getPath("userData"), "sessions")
+    : path.join(__dirname, "..", "data", "sessions");
+  fs.mkdirSync(p, { recursive: true });
+  return p;
+})();
 const MAX_LOGS = 500;
 
 // Resolve paths for dev (__dirname) vs packaged (process.resourcesPath)
@@ -147,7 +153,7 @@ function startMitmproxy() {
   ], {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
-    env: { ...process.env, PYTHONUTF8: "1", PYTHONUNBUFFERED: "1", PYTHONIOENCODING: "utf-8" },
+    env: { ...process.env, PYTHONUTF8: "1", PYTHONUNBUFFERED: "1", PYTHONIOENCODING: "utf-8", QQCHESS_DATA_DIR: SESSIONS_DIR },
   });
 
   mitmProcess.stdout.on("data", (data) => {

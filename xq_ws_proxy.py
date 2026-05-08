@@ -1083,7 +1083,8 @@ class QQChessWSProxy:
         if not self.raw:
             return
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        out = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'sessions')
+        out = os.environ.get('QQCHESS_DATA_DIR',
+               os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'sessions'))
         os.makedirs(out, exist_ok=True)
         files = {
             f'qqchess_ws_raw_{ts}.json': self.raw,
