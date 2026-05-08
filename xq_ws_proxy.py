@@ -958,7 +958,7 @@ class QQChessWSProxy:
                             'is_own': is_own,
                         }
                         self.moves.append(rec)
-                        own_tag = ' (我方)' if is_own else ''
+                        own_tag = ' (我方)' if is_own else (' (对手)' if is_own is False else '')
                         ctx.log.info(f"  >>> [{move_label} #{self.move_n}] {best['uci']}{own_tag} <<<")
             except Exception as e:
                 ctx.log.warn(f"  [GAME] 解析失败: {e}")

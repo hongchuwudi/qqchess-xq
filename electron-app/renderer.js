@@ -126,14 +126,8 @@ const GameStateTracker = {
     const piece = grid[fr][fc];
     if (!piece || piece === ".") return null;
 
-    // Validate: SENT moves must be user's own pieces, RECV must be opponent's
-    if (!skipValidation && sent !== undefined && _userSide) {
-      const isRedPiece = piece === piece.toUpperCase();
-      if (sent && _userSide === "w" && !isRedPiece) return null; // user=Red but piece=Black
-      if (sent && _userSide === "b" && isRedPiece) return null;  // user=Black but piece=Red
-      if (!sent && _userSide === "w" && isRedPiece) return null;  // opponent should be Black
-      if (!sent && _userSide === "b" && !isRedPiece) return null; // opponent should be Red
-    }
+    // Piece-color validation skipped: proxy camp detection is authoritative,
+    // and proxy<->FEN coordinate mapping has not been verified.
 
     // Build Chinese notation BEFORE mutating the board
     const chinese = this._toChinese(uci, piece, fc, fr, tc, tr);
