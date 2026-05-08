@@ -847,12 +847,6 @@ window.qqchess.onLogLine((data) => {
       mv.chinese = result.chinese;
       mv.uci = fenUci;
       parsedMoves.push(mv);
-
-      console.log(
-        `[走子 #${parsedMoves.length}] ` +
-        `${mv.sent ? '己方' : '对方'} ` +
-        `${mv.uci} ${mv.chinese}`
-      );
       _currentFen = result.fen;
       setLastMove(mv.uci);
       _bestFrom = _bestTo = null;
@@ -992,11 +986,6 @@ async function init() {
               mv.uci = fenUci;
               setLastMove(fenUci);
               parsedMoves.push(mv);
-              console.log(
-                `[走子 #${parsedMoves.length}] ` +
-                `${mv.sent ? '己方' : '对方'} ` +
-                `${mv.uci} ${mv.chinese}`
-              );
             }
           }
         }

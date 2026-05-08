@@ -119,7 +119,10 @@ function startMitmproxy() {
   mitmProcess.stdout.on("data", (data) => {
     for (const line of data.toString().split("\n")) {
       const trimmed = line.trim();
-      if (trimmed && !_isResourceLog(trimmed)) addLog(trimmed);
+      if (trimmed && !_isResourceLog(trimmed)) {
+        process.stdout.write(trimmed + "\n");
+        addLog(trimmed);
+      }
     }
     notifyStatus();
   });
@@ -127,7 +130,10 @@ function startMitmproxy() {
   mitmProcess.stderr.on("data", (data) => {
     for (const line of data.toString().split("\n")) {
       const trimmed = line.trim();
-      if (trimmed) addLog("[stderr] " + trimmed);
+      if (trimmed) {
+        process.stderr.write("[stderr] " + trimmed + "\n");
+        addLog("[stderr] " + trimmed);
+      }
     }
   });
 
