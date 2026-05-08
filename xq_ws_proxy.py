@@ -6,6 +6,10 @@ JCE 解析 → 密钥派生 → TEA-CBC 解密 → 走子提取
 启动: mitmdump --listen-port 8888 -s xq_ws_proxy.py
 """
 
+import sys
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
+
 import json
 import struct
 import re
