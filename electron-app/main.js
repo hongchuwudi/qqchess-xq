@@ -605,11 +605,11 @@ function setupIPC() {
 
 // ── App lifecycle ───────────────────────────────────────────────────────
 app.whenReady().then(async () => {
-  const startupMsg = `[main] QQ Chess Proxy 启动 — ${new Date().toLocaleString()}  代理端口: ${PROXY_PORT}`;
+  const startupMsg = `[main] QQ Chess Proxy starting -- ${new Date().toLocaleString()}  port: ${PROXY_PORT}`;
   console.log(startupMsg);
   addLog("[main] ========================================");
-  addLog(`[main] QQ Chess Proxy 启动 — ${new Date().toLocaleString()}`);
-  addLog(`[main] 代理端口: ${PROXY_PORT}  |  游戏地址: ${GAME_URL}`);
+  addLog(`[main] QQ Chess Proxy starting -- ${new Date().toLocaleString()}`);
+  addLog(`[main] port: ${PROXY_PORT}  |  game: ${GAME_URL}`);
   addLog("[main] ========================================");
 
   buildMenu();
