@@ -13,6 +13,19 @@ const GAME_URL = "https://h5login.qqchess.qq.com/";
 const SESSIONS_DIR = path.join(__dirname, "..", "data", "sessions");
 const MAX_LOGS = 500;
 
+// Resolve paths for dev (__dirname) vs packaged (process.resourcesPath)
+function _resPath(...parts) {
+  const base = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
+  return path.join(base, ...parts);
+}
+const PYTHON_DIR = app.isPackaged
+  ? path.join(process.resourcesPath, "python")
+  : path.join(__dirname, "python");
+const PYTHON_EXE = path.join(PYTHON_DIR, "python.exe");
+const MITMDUMP_EXE = path.join(PYTHON_DIR, "Scripts", "mitmdump.exe");
+const ADDON_PATH = _resPath("xq_ws_proxy.py");
+const ENGINE_DIR = _resPath("engines", "pikayu-20260131");
+
 // ── State ───────────────────────────────────────────────────────────────
 let mitmProcess = null;
 let controlWindow = null;
@@ -90,7 +103,7 @@ function notifyStatus() {
 
 // ── mitmproxy management ────────────────────────────────────────────────
 function isMitmdumpAvailable() {
-  const result = require("child_process").spawnSync("mitmdump", ["--version"], {
+  const result = require("child_process").spawnSync(MITMDUMP_EXE, ["--version"], {
     stdio: "ignore",
     windowsHide: true,
   });
@@ -103,27 +116,32 @@ function startMitmproxy() {
     return true;
   }
 
-  const addonPath = path.join(__dirname, "..", "xq_ws_proxy.py");
-  if (!fs.existsSync(addonPath)) {
+  if (!fs.existsSync(ADDON_PATH)) {
     addLog("[main] ERROR: xq_ws_proxy.py not found");
-    dialog.showErrorBox("启动失败", `找不到代理脚本:\n${addonPath}`);
+    dialog.showErrorBox("启动失败", `找不到代理脚本:\n${ADDON_PATH}`);
     return false;
   }
 
+  // Ensure mitmproxy is installed in portable Python
   if (!isMitmdumpAvailable()) {
-    addLog("[main] ERROR: mitmdump not found in PATH");
-    dialog.showErrorBox(
-      "mitmproxy 未安装",
-      "请先安装 mitmproxy:\n\npip install mitmproxy\n\n确保 mitmdump 在系统 PATH 中。"
-    );
-    return false;
+    addLog("[main] mitmproxy not installed, installing...");
+    const install = require("child_process").spawnSync(PYTHON_EXE, ["-m", "pip", "install", "mitmproxy"], {
+      stdio: "pipe",
+      windowsHide: true,
+      timeout: 120000,
+    });
+    if (install.status !== 0) {
+      addLog("[main] ERROR: mitmproxy install failed");
+      return false;
+    }
+    addLog("[main] mitmproxy installed");
   }
 
   addLog(`[main] Starting mitmdump on port ${PROXY_PORT}...`);
 
-  mitmProcess = spawn("mitmdump", [
+  mitmProcess = spawn(MITMDUMP_EXE, [
     "--listen-port", String(PROXY_PORT),
-    "-s", addonPath,
+    "-s", ADDON_PATH,
     "--set", "block_global=false",
     "--ssl-insecure",
   ], {
@@ -585,7 +603,7 @@ app.whenReady().then(async () => {
   await new Promise((r) => controlWindow.webContents.on("did-finish-load", r));
 
   // Start Pikafish engine
-  pikafish = new PikafishBridge();
+  pikafish = new PikafishBridge(ENGINE_DIR);
   pikafish._onLog = (msg) => addLog(msg);
   pikafish._onReady = (name) => {
     addLog(`[main] Pikafish engine ready: ${name}`);

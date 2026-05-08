@@ -2,31 +2,14 @@ const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
-const ENGINE_DIR = path.join(__dirname, "..", "engines", "pikayu-20260131");
+const DEF_ENGINE_DIR = path.join(__dirname, "..", "engines", "pikayu-20260131");
 
 // sse41-popcnt first — widest CPU compatibility
 const PREF_ORDER = ["sse41-popcnt", "bmi2", "avx2", "avxvnni", "avx512", "avx512icl", "vnni512"];
 
-function listEngines() {
-  if (!fs.existsSync(ENGINE_DIR)) return [];
-  try {
-    const exes = fs.readdirSync(ENGINE_DIR).filter((f) => f.endsWith(".exe"));
-    const ordered = [];
-    for (const pref of PREF_ORDER) {
-      const match = exes.find((e) => e.includes(pref));
-      if (match && !ordered.includes(match)) ordered.push(match);
-    }
-    for (const e of exes) {
-      if (!ordered.includes(e)) ordered.push(e);
-    }
-    return ordered.map((e) => path.join(ENGINE_DIR, e));
-  } catch (e) {
-    return [];
-  }
-}
-
 class PikafishBridge {
-  constructor() {
+  constructor(engineDir) {
+    this._engineDir = engineDir || DEF_ENGINE_DIR;
     this.proc = null;
     this.ready = false;
     this.enginePath = null;
@@ -44,10 +27,28 @@ class PikafishBridge {
     this._tryIdx = 0;
   }
 
+  _listEngines() {
+    if (!fs.existsSync(this._engineDir)) return [];
+    try {
+      const exes = fs.readdirSync(this._engineDir).filter((f) => f.endsWith(".exe"));
+      const ordered = [];
+      for (const pref of PREF_ORDER) {
+        const match = exes.find((e) => e.includes(pref));
+        if (match && !ordered.includes(match)) ordered.push(match);
+      }
+      for (const e of exes) {
+        if (!ordered.includes(e)) ordered.push(e);
+      }
+      return ordered.map((e) => path.join(this._engineDir, e));
+    } catch (e) {
+      return [];
+    }
+  }
+
   start() {
-    this._binaries = listEngines();
+    this._binaries = this._listEngines();
     if (this._binaries.length === 0) {
-      this._log("[pikafish] No engine .exe found in: " + ENGINE_DIR);
+      this._log("[pikafish] No engine .exe found in: " + this._engineDir);
       return false;
     }
     this._log("[pikafish] Found " + this._binaries.length + " binary(s), trying in compatibility order");
@@ -74,7 +75,7 @@ class PikafishBridge {
 
     try {
       this.proc = spawn(exePath, [], {
-        cwd: ENGINE_DIR,
+        cwd: this._engineDir,
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
       });
@@ -111,9 +112,7 @@ class PikafishBridge {
       }
     });
 
-    // Try UCCI first (older Pikafish), fall back to UCI (newer versions)
     this._send("ucci");
-
     this._startupTimer = setTimeout(() => {
       if (!this._uciok) {
         this._log("[pikafish] Timeout (8s) — no ucciok from " + exeName);
@@ -146,7 +145,7 @@ class PikafishBridge {
   }
 
   async analyze(fen, moveList) {
-    const depth = (moveList && moveList.length > 0) ? 18 : 18;
+    const depth = 18;
     const movetime = 3000;
 
     if (!this.isReady) return { error: "Engine not ready" };
@@ -155,13 +154,10 @@ class PikafishBridge {
     this._pending = null;
 
     const INITIAL_FEN = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w";
-
-    // Convert our FEN-coords UCIs → engine UCIs (row: 0=Black top → 0=Red bottom)
     const engMoves = (moveList || []).map((m) => this._convRow(m));
     const moves = engMoves.join(" ");
 
     if (fen && fen !== INITIAL_FEN) {
-      // Mid-game position from server state sync
       this._log("[pikafish] position fen " + fen + " moves " + moves);
       this._send("position fen " + fen + " moves " + moves);
     } else if (engMoves.length === 0) {
@@ -218,7 +214,6 @@ class PikafishBridge {
         continue;
       }
 
-      // UCCI not supported → fall back to UCI protocol
       if (t.toLowerCase().includes("unknown command") && t.toLowerCase().includes("ucci")) {
         this._log("[pikafish] UCCI not supported, switching to UCI protocol");
         this._send("uci");
@@ -254,7 +249,6 @@ class PikafishBridge {
     }
   }
 
-  // Engine row (0=Red bottom) → FEN row (0=Black top)
   _convRow(uci) {
     if (!uci || uci.length < 4) return uci;
     const fr = parseInt(uci[1]), tr = parseInt(uci[3]);

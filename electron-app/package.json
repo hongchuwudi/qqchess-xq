@@ -10,6 +10,32 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^39.2.3"
+    "electron": "^39.2.3",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.qqchess.proxy",
+    "productName": "QQ象棋协议分析器",
+    "extraResources": [
+      { "from": "python", "to": "python" },
+      { "from": "../engines", "to": "engines" },
+      { "from": "../xq_ws_proxy.py", "to": "xq_ws_proxy.py" }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "pikafish-bridge.js",
+      "renderer.js",
+      "index.html",
+      "style.css"
+    ]
   }
 }
