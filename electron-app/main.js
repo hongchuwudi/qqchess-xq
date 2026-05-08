@@ -26,6 +26,16 @@ let pikafish = null;
 // ── Log management ──────────────────────────────────────────────────────
 let _statusTimer = null;
 
+// Filter out mitmdump HTTP resource logs — keep only QQ Chess addon output
+function _isResourceLog(line) {
+  // mitmdump traffic: "IP:PORT: METHOD URL" or "IP:PORT: ← STATUS"
+  if (/^\d+\.\d+\.\d+\.\d+:\d+:/.test(line)) return true;
+  if (/\s*←\s+\d{3}/.test(line)) return true;
+  // mitmdump connection messages (server connect, client disconnect, etc.)
+  if (/(?:server|client)\s+(?:connection|disconnect)/i.test(line)) return true;
+  return false;
+}
+
 function addLog(msg) {
   logs.push({ time: new Date().toISOString(), text: msg });
   if (logs.length > MAX_LOGS) logs = logs.slice(-MAX_LOGS);
@@ -109,7 +119,7 @@ function startMitmproxy() {
   mitmProcess.stdout.on("data", (data) => {
     for (const line of data.toString().split("\n")) {
       const trimmed = line.trim();
-      if (trimmed) addLog(trimmed);
+      if (trimmed && !_isResourceLog(trimmed)) addLog(trimmed);
     }
     notifyStatus();
   });
@@ -200,6 +210,9 @@ function configureSession() {
   });
 
   app.commandLine.appendSwitch("ignore-certificate-errors");
+
+  // Reduce Chromium console noise (0=verbose, 1=info, 2=warn, 3=error only)
+  app.commandLine.appendSwitch("log-level", "3");
 }
 
 // ── Windows ─────────────────────────────────────────────────────────────
@@ -570,6 +583,11 @@ function setupIPC() {
 
 // ── App lifecycle ───────────────────────────────────────────────────────
 app.whenReady().then(async () => {
+  addLog("[main] ========================================");
+  addLog(`[main] QQ Chess Proxy 启动 — ${new Date().toLocaleString()}`);
+  addLog(`[main] 代理端口: ${PROXY_PORT}  |  游戏地址: ${GAME_URL}`);
+  addLog("[main] ========================================");
+
   buildMenu();
   setupIPC();
   configureSession();

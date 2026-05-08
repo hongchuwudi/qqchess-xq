@@ -746,9 +746,14 @@ async function restoreMovesFromSession() {
       if (!uci) continue;
       const fenUci = proxyToFenUci(uci);
       const sent = m.direction === "SEND";
+      // Use proxy camp info for side detection (authoritative)
+      if (_userSide === null && sent && m.camp) {
+        _userSide = m.camp === "red" ? "w" : "b";
+        updateMySide();
+      }
       const result = GameStateTracker.applyMove(fenUci, sent);
       if (result) {
-        // Detect user side from first SENT move: piece color is authoritative
+        // Fallback: detect user side from first SENT move piece color
         if (_userSide === null && sent) {
           _userSide = result.isRed ? "w" : "b";
           updateMySide();
@@ -777,6 +782,20 @@ async function refreshSessionCount() {
 window.qqchess.onLogLine((data) => {
   logLines.push(data);
   if (logLines.length > 1000) logLines = logLines.slice(-1000);
+
+  // Camp detection from proxy [CAMP] log — authoritative side assignment
+  if (data.text.includes("[CAMP]")) {
+    const campMatch = data.text.match(/\[CAMP\].*→\s*(red|black)/);
+    if (campMatch) {
+      const newSide = campMatch[1] === "red" ? "w" : "b";
+      if (_userSide !== newSide) {
+        _userSide = newSide;
+        updateMySide();
+        redrawBoard();
+        refreshMoveList();
+      }
+    }
+  }
 
   // Mid-game FEN from server state sync (eventID=63) — reset board to current position
   if (data.text.includes("[MIDGAME]")) {
@@ -828,6 +847,12 @@ window.qqchess.onLogLine((data) => {
       mv.chinese = result.chinese;
       mv.uci = fenUci;
       parsedMoves.push(mv);
+
+      console.log(
+        `[走子 #${parsedMoves.length}] ` +
+        `${mv.sent ? '己方' : '对方'} ` +
+        `${mv.uci} ${mv.chinese}`
+      );
       _currentFen = result.fen;
       setLastMove(mv.uci);
       _bestFrom = _bestTo = null;
@@ -924,6 +949,13 @@ async function init() {
       GameStateTracker.reset();
       for (const entry of existingLogs) {
         logLines.push(entry);
+        // Camp detection from proxy [CAMP] log
+        if (entry.text.includes("[CAMP]")) {
+          const campMatch = entry.text.match(/\[CAMP\].*→\s*(red|black)/);
+          if (campMatch) {
+            _userSide = campMatch[1] === "red" ? "w" : "b";
+          }
+        }
         // Mid-game FEN from server state sync (eventID=63)
         if (entry.text.includes("[MIDGAME]")) {
           const m = entry.text.match(/\[MIDGAME\]\s+fen=(\S+)/);
@@ -960,6 +992,11 @@ async function init() {
               mv.uci = fenUci;
               setLastMove(fenUci);
               parsedMoves.push(mv);
+              console.log(
+                `[走子 #${parsedMoves.length}] ` +
+                `${mv.sent ? '己方' : '对方'} ` +
+                `${mv.uci} ${mv.chinese}`
+              );
             }
           }
         }
