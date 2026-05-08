@@ -864,26 +864,23 @@ window.qqchess.onLogLine((data) => {
     }
   }
 
-  // Auto-reset game state when a new WebSocket connection starts (new game)
-  if (data.text.includes("[QQ象棋] 已连接")) {
+  // New game detected — reset only game-specific state (keep engine state)
+  if (data.text.includes("[GAME] ====== 对局") && data.text.includes("开始")) {
+    parsedMoves = [];
     GameStateTracker.reset();
     _currentFen = INITIAL_FEN;
     _lastAnalyzedFen = null;
-    parsedMoves = [];
     _userSide = null;
     _lastSentUci = null;
     _lastSentTime = 0;
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
-    _lastLoadedMovesFile = null;
-    _autoPlay = false;
-    _pendingAutoPlay = false;
-    dom.btnAutoplay.textContent = "⚡ 自动走子";
-    dom.btnAutoplay.classList.remove("btn-accent");
-    updateMySide();
-    redrawBoard();
     refreshMoveList();
+    redrawBoard();
     updateEngineUI(null);
     dom.engineFen.textContent = INITIAL_FEN;
+    // Try to restore moves from saved session (reconnection recovery)
+    _lastLoadedMovesFile = null;
+    setTimeout(() => restoreMovesFromSession(), 500);
   }
 
   // Clear engine + moves when game ends (websocket disconnect or game over)

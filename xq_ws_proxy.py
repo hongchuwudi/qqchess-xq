@@ -967,6 +967,7 @@ class QQChessWSProxy:
                             'is_own': is_own,
                         }
                         self.moves.append(rec)
+                        self._save()  # persist after each move
                         own_tag = ' (我方)' if is_own else (' (对手)' if is_own is False else '')
                         ctx.log.info(f"  >>> [{move_label} #{self.move_n}] {best['uci']}{own_tag} <<<")
             except Exception as e:
@@ -998,9 +999,7 @@ class QQChessWSProxy:
         ctx.log.info(f"[QQ象棋] 断开 总={self.total} SEND={self.sends} RECV={self.recvs} moves={len(self.moves)}")
         if self.moves:
             ctx.log.info(f"[QQ象棋] 走子: {' '.join(m['uci'] for m in self.moves)}")
-        if self._game_active and self.move_n > 0:
-            self._end_game('ws_disconnect')
-        self._save()
+        self._save()  # save state on disconnect (don't end game — may reconnect)
 
     def done(self):
         self._save()
