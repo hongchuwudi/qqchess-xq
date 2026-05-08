@@ -870,16 +870,25 @@ class QQChessWSProxy:
             except Exception as e:
                 ctx.log.error(f"  [DEC] 失败: {e}")
 
-        # ---- 游戏上下文 (86001) — 仅日志参考 (body是TResponseSitDown, field2是tableID) ----
+        # ---- 游戏上下文 (86001) — 新对局检测 (tableID变化=新一局) ----
         check_body_ctx = plain if encrypted else body
         if msg_id == 86001 and not m.from_client and check_body_ctx:
             try:
                 ctx2 = parse_game_context(check_body_ctx)
+                table_id = ctx2.get('iFirstSide', 0)  # field2 is actually tableID
                 ctx.log.info(
-                    f"  [86001] tableID={ctx2.get('iFirstSide')}  "
+                    f"  [86001] tableID={table_id}  "
                     f"qm={ctx2.get('qm')}  hxb={ctx2.get('hxb')}"
                 )
-                if not self._game_active:
+                if not hasattr(self, '_last_table_id'):
+                    self._last_table_id = None
+                if self._last_table_id is not None and self._last_table_id != table_id:
+                    if self._game_active:
+                        self._end_game('new_table')
+                    self._last_table_id = table_id
+                    self._on_game_begin(self.total)
+                elif not self._game_active:
+                    self._last_table_id = table_id
                     self._on_game_begin(self.total)
             except Exception as e:
                 ctx.log.warn(f"  [CTX] 解析失败: {e}")
