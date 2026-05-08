@@ -210,9 +210,6 @@ function configureSession() {
   });
 
   app.commandLine.appendSwitch("ignore-certificate-errors");
-
-  // Reduce Chromium console noise (0=verbose, 1=info, 2=warn, 3=error only)
-  app.commandLine.appendSwitch("log-level", "3");
 }
 
 // ── Windows ─────────────────────────────────────────────────────────────
@@ -583,6 +580,8 @@ function setupIPC() {
 
 // ── App lifecycle ───────────────────────────────────────────────────────
 app.whenReady().then(async () => {
+  const startupMsg = `[main] QQ Chess Proxy 启动 — ${new Date().toLocaleString()}  代理端口: ${PROXY_PORT}`;
+  console.log(startupMsg);
   addLog("[main] ========================================");
   addLog(`[main] QQ Chess Proxy 启动 — ${new Date().toLocaleString()}`);
   addLog(`[main] 代理端口: ${PROXY_PORT}  |  游戏地址: ${GAME_URL}`);
@@ -616,9 +615,13 @@ app.whenReady().then(async () => {
   };
   const engineOk = pikafish.start();
   if (engineOk) {
-    addLog("[main] Pikafish engine starting (waiting for UCCI handshake)...");
+    const msg = "[main] Pikafish engine starting (waiting for UCCI handshake)...";
+    console.log(msg);
+    addLog(msg);
   } else {
-    addLog("[main] Pikafish engine not available — analysis disabled");
+    const msg = "[main] Pikafish engine not available — analysis disabled";
+    console.log(msg);
+    addLog(msg);
     if (controlWindow && !controlWindow.isDestroyed()) {
       controlWindow.webContents.send("engine-status", { ready: false, name: null });
     }
@@ -626,10 +629,12 @@ app.whenReady().then(async () => {
 
   const started = startMitmproxy();
   if (started) {
+    console.log(`[main] mitmproxy started on port ${PROXY_PORT}, waiting for health check...`);
     await waitForProxy();
   }
 
   // Auto-launch game window once proxy is running
+  console.log("[main] Opening game window...");
   createGameWindow();
 });
 
