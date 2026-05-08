@@ -25,13 +25,30 @@ let pikafish = null;
 
 // ── Log management ──────────────────────────────────────────────────────
 let _statusTimer = null;
+let _gbkDecoder = null;
+
+// Decode mitmdump output. On Chinese Windows, mitmdump may emit GBK
+// bytes despite PYTHONUTF8=1. Try UTF-8 first; fall back to GBK.
+function _decodeMitm(buf) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buf);
+  } catch (_) {
+    try {
+      if (!_gbkDecoder) _gbkDecoder = new TextDecoder("gbk");
+      return _gbkDecoder.decode(buf);
+    } catch (_) {
+      return buf.toString();
+    }
+  }
+}
 
 // Filter out mitmdump HTTP/WS resource logs — keep only QQ Chess addon output
 function _isResourceLog(line) {
-  // HTTP response status: "<< HTTP/2.0 304 Not Modified 0b"
-  if (/<<\s+HTTP\/\d/i.test(line)) return true;
+  // mitmdump flow request: "IP:PORT: METHOD URL ..."
+  if (/^\d+\.\d+\.\d+\.\d+:\d+:\s+(?:GET|POST|PUT|DELETE|HEAD|OPTIONS|CONNECT|PATCH)\s/i.test(line)) return true;
+  // HTTP response: "<< HTTP/2.0 304 ..." or "<< 101 Switching Protocols ..."
+  if (/^<<\s+/i.test(line)) return true;
   // WS flow: "IP:PORT -> WebSocket binary message -> HOST"
-  // WS flow: "IP:PORT <- WebSocket binary message <- HOST"
   if (/\d+\.\d+\.\d+\.\d+:\d+\s*(->|<-)\s*WebSocket/i.test(line)) return true;
   // TCP connection messages
   if (/(?:server|client)\s+(?:connection|disconnect)/i.test(line)) return true;
@@ -115,11 +132,11 @@ function startMitmproxy() {
   ], {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
-    env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONIOENCODING: "utf-8" },
+    env: { ...process.env, PYTHONUTF8: "1", PYTHONUNBUFFERED: "1", PYTHONIOENCODING: "utf-8" },
   });
 
   mitmProcess.stdout.on("data", (data) => {
-    for (const line of data.toString().split("\n")) {
+    for (const line of _decodeMitm(data).split("\n")) {
       const trimmed = line.trim();
       if (trimmed && !_isResourceLog(trimmed)) {
         process.stdout.write(trimmed + "\n");
@@ -130,7 +147,7 @@ function startMitmproxy() {
   });
 
   mitmProcess.stderr.on("data", (data) => {
-    for (const line of data.toString().split("\n")) {
+    for (const line of _decodeMitm(data).split("\n")) {
       const trimmed = line.trim();
       if (trimmed) {
         process.stderr.write("[stderr] " + trimmed + "\n");
