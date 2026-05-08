@@ -123,9 +123,19 @@
     }
 
     async function init() {
-      currentDir = await ipcRenderer.invoke("get-data-dir");
-      pathDisplay.textContent = currentDir;
+      try {
+        currentDir = await ipcRenderer.invoke("get-data-dir");
+        pathDisplay.textContent = currentDir;
+      } catch(_) { pathDisplay.textContent = "加载失败"; }
+      // Timeout fallback: show "not detected" if detect hangs
+      const timeout = setTimeout(() => {
+        setStatus("dot-py", "dot-fail");
+        document.getElementById("txt-py").textContent = "检测超时(请确认Python已安装)";
+        setStatus("dot-mitm", "dot-fail");
+        document.getElementById("txt-mitm").textContent = "检测超时";
+      }, 15000);
       await detect();
+      clearTimeout(timeout);
     }
 
     document.getElementById("btn-choose").addEventListener("click", async () => {
