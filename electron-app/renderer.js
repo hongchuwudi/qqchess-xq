@@ -517,7 +517,6 @@ function updateStatus(status) {
   proxyOnline = status.running;
   dom.statusDot.className = "dot " + (proxyOnline ? "dot-online" : "dot-offline");
   dom.statusText.textContent = proxyOnline ? "代理运行中" : "代理未启动";
-  dom.statusPort.textContent = proxyOnline ? `127.0.0.1:${status.port}` : "";
 
   dom.btnProxy.textContent = proxyOnline ? "停止代理" : "启动代理";
   dom.btnProxy.classList.toggle("btn-warn", proxyOnline);

@@ -446,7 +446,7 @@ function setupIPC() {
         .filter((f) => f.endsWith(".json"))
         .sort()
         .reverse()
-        .slice(0, 20)
+        .slice(0, 200)
         .map((f) => ({
           name: f,
           path: path.join(SESSIONS_DIR, f),

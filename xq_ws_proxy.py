@@ -1074,6 +1074,11 @@ class QQChessWSProxy:
         self._on_game_end(reason)
 
     def _save(self):
+        # Throttle: save at most once per 3 seconds
+        now = datetime.now()
+        if hasattr(self, '_last_save') and (now - self._last_save).total_seconds() < 3:
+            return
+        self._last_save = now
         if not self.raw:
             return
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
