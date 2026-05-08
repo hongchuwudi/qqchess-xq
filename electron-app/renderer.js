@@ -864,7 +864,7 @@ window.qqchess.onLogLine((data) => {
     }
   }
 
-  // New game detected — reset only game-specific state (keep engine state)
+  // New game detected — reset game state
   if (data.text.includes("[GAME] ====== 对局") && data.text.includes("开始")) {
     parsedMoves = [];
     GameStateTracker.reset();
@@ -878,9 +878,12 @@ window.qqchess.onLogLine((data) => {
     redrawBoard();
     updateEngineUI(null);
     dom.engineFen.textContent = INITIAL_FEN;
-    // Try to restore moves from saved session (reconnection recovery)
+  }
+
+  // 86001 arrives — try to restore from saved session (covers reconnect + new game)
+  if (data.text.includes("[86001] tableID=")) {
     _lastLoadedMovesFile = null;
-    setTimeout(() => restoreMovesFromSession(), 500);
+    setTimeout(() => restoreMovesFromSession(), 300);
   }
 
   // Clear engine + moves when game ends (websocket disconnect or game over)
