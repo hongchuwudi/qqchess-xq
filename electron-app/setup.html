@@ -45,24 +45,24 @@
     <h1>QQ象棋协议分析器 — 环境检测</h1>
 
     <div class="section">
-      <div class="section-title">1. Python 环境</div>
+      <div class="section-title">1. Python 3.11+（运行代理脚本的环境）</div>
       <div class="check-row"><span class="dot dot-pending" id="dot-py"></span><span id="txt-py">检测中...</span></div>
       <div class="guide" id="guide-py">
-        Python 未安装或未添加到 PATH。<br>
+        Python 是 mitmproxy 代理工具的运行环境，必须安装。<br>
         下载 <a href="#" onclick="shellOpen('https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe')">Python 3.11.9 安装包</a>（64位），<br>
         安装时<b>务必勾选 "Add Python to PATH"</b>，<br>
-        安装完成后点击下方重新检测。
+        安装完成后点击「重新检测」。
       </div>
     </div>
 
     <div class="section">
-      <div class="section-title">2. mitmproxy 代理依赖</div>
+      <div class="section-title">2. mitmproxy 代理依赖（Python 网络抓包工具）</div>
       <div class="check-row"><span class="dot dot-pending" id="dot-mitm"></span><span id="txt-mitm">等待 Python...</span></div>
       <div class="guide" id="guide-mitm">
-        Python 已安装但 mitmproxy 未安装。<br>
-        打开 CMD 或 PowerShell 执行：<br>
+        mitmproxy 是 Python 的 HTTPS 抓包工具，用于拦截和分析 QQ 象棋的网络通信。<br>
+        安装方法：打开 CMD 或 PowerShell，执行：<br>
         <code>pip install mitmproxy</code><br>
-        安装完成后点击下方重新检测。
+        安装完成后点击「重新检测」。
       </div>
     </div>
 
