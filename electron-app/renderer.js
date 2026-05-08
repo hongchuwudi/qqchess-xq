@@ -485,13 +485,12 @@ function refreshMoveList() {
   const redM = [], blkM = [];
   for (const mv of parsedMoves) {
     const cn = mv.chinese || mv.uci;
-    // Robust column assignment: prefer Chinese glyph, fall back to sent+userSide
+    // Column assignment: proxy camp (SEND/RECV) is authoritative
     let isRed;
-    if (mv.chinese) {
-      isRed = /^[砲馬車兵仕相帥]/.test(mv.chinese);
-    } else if (_userSide && mv.sent !== undefined) {
-      // If user sent this move, it's user's side; otherwise it's opponent's
+    if (_userSide && mv.sent !== undefined) {
       isRed = mv.sent ? (_userSide === "w") : (_userSide === "b");
+    } else if (mv.chinese) {
+      isRed = /^[砲馬車兵仕相帥]/.test(mv.chinese);
     } else {
       isRed = /^[砲馬車兵仕相帥]/.test(cn);
     }
