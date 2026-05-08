@@ -882,14 +882,16 @@ class QQChessWSProxy:
                 )
                 if not hasattr(self, '_last_table_id'):
                     self._last_table_id = None
-                if self._last_table_id is not None and self._last_table_id != table_id:
+                table_changed = self._last_table_id is not None and self._last_table_id != table_id
+                if table_changed:
                     if self._game_active:
                         self._end_game('new_table')
                     self._last_table_id = table_id
                     self._on_game_begin(self.total)
-                elif not self._game_active:
+                elif self._last_table_id is None or not self._game_active:
                     self._last_table_id = table_id
                     self._on_game_begin(self.total)
+                # else: same table, game active = reconnection (no state change)
             except Exception as e:
                 ctx.log.warn(f"  [CTX] 解析失败: {e}")
 
