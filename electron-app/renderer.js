@@ -656,8 +656,8 @@ dom.filterMoves.addEventListener("change", refreshLogView);
 dom.filterMsgs.addEventListener("change", refreshLogView);
 
 dom.btnGame.addEventListener("click", () => {
-  if (!window.qqchess) { alert("preload 未加载"); return; }
-  window.qqchess.launchGame();
+  const wv = document.getElementById("game-webview");
+  if (wv) wv.src = "https://h5login.qqchess.qq.com/";
 });
 
 dom.btnProxy.addEventListener("click", () => {
@@ -873,6 +873,19 @@ window.qqchess.onLogLine((data) => {
     dom.engineFen.textContent = INITIAL_FEN;
   }
 
+  // Clear engine + moves when game ends (websocket disconnect or game over)
+  if (data.text.includes("[QQ象棋] 断开") || data.text.includes("[GAME] ====== 对局") && data.text.includes("结束")) {
+    parsedMoves = [];
+    GameStateTracker.reset();
+    _currentFen = INITIAL_FEN;
+    _lastAnalyzedFen = null;
+    _lastFrom = _lastTo = _bestFrom = _bestTo = null;
+    refreshMoveList();
+    redrawBoard();
+    updateEngineUI(null);
+    dom.engineFen.textContent = INITIAL_FEN;
+  }
+
   // Throttle log refresh
   if (!refreshLogView._timer) {
     refreshLogView._timer = requestAnimationFrame(() => {
@@ -885,6 +898,11 @@ window.qqchess.onLogLine((data) => {
 window.qqchess.onProxyStatus((status) => updateStatus(status));
 
 window.qqchess.onGameClosed(() => { /* noop */ });
+
+window.qqchess.onLaunchGame((url) => {
+  const wv = document.getElementById("game-webview");
+  if (wv) wv.src = url;
+});
 
 window.qqchess.onSessionFileChanged(() => {
   refreshSessionCount();

@@ -8,6 +8,16 @@
 </head>
 <body>
   <div id="app">
+    <!-- Game webview: left 2/3 -->
+    <div id="game-pane">
+      <webview id="game-webview" src="about:blank"
+        allowpopups
+        style="width:100%;height:100%">
+      </webview>
+    </div>
+
+    <!-- Control panel: right 1/3 -->
+    <div id="control-pane">
     <header class="header">
       <h1 class="title">QQ Chess Proxy</h1>
       <div class="status-bar">
@@ -111,6 +121,7 @@
         </div>
       </div>
     </section>
+    </div><!-- end control-pane -->
   </div>
 
   <script src="renderer.js"></script>

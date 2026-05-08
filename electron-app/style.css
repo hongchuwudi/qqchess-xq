@@ -28,10 +28,24 @@ body {
 
 #app {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100vh;
-  padding: 12px;
-  gap: 8px;
+}
+
+#game-pane {
+  flex: 2;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+
+#control-pane {
+  flex: 1;
+  min-width: 360px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  gap: 6px;
+  overflow-y: auto;
 }
 
 /* ── Header ───────────────────────────────────────────────────────── */

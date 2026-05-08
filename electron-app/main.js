@@ -16,7 +16,7 @@ const MAX_LOGS = 500;
 // ── State ───────────────────────────────────────────────────────────────
 let mitmProcess = null;
 let controlWindow = null;
-let gameWindow = null;
+let gameWebContents = null;
 let logs = [];
 let moves = [];
 let proxyRunning = false;
@@ -238,95 +238,57 @@ function configureSession() {
 // ── Windows ─────────────────────────────────────────────────────────────
 function getWindowBounds() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-  const cw = Math.floor(width / 3);       // control: 1/3
-  const gw = width - cw;                  // game: 2/3
-  return { cw, gw, height, totalWidth: width };
+  return { width, height };
 }
 
 function createControlWindow() {
-  const { cw, gw, height } = getWindowBounds();
+  const { width, height } = getWindowBounds();
 
   controlWindow = new BrowserWindow({
-    x: gw,   // right side (game on left)
+    x: 0,
     y: 0,
-    width: cw,
+    width: width,
     height: height,
-    minWidth: 320,
-    minHeight: 500,
+    minWidth: 960,
+    minHeight: 600,
     resizable: true,
     title: "QQ Chess Proxy",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
     },
   });
 
   controlWindow.loadFile(path.join(__dirname, "index.html"));
 
+  // Proxy for game webview
+  controlWindow.webContents.on("did-attach-webview", (_event, wc) => {
+    gameWebContents = wc;
+    wc.session.setProxy({
+      proxyRules: PROXY_URL,
+      proxyBypassRules: "<-loopback>,graph.qq.com",
+    }).catch(() => {});
+    wc.on("destroyed", () => { gameWebContents = null; });
+  });
+
   controlWindow.on("closed", () => {
     controlWindow = null;
     stopMitmproxy();
-    if (gameWindow && !gameWindow.isDestroyed()) {
-      gameWindow.close();
-    }
   });
 
   if (process.argv.includes("--dev")) {
     controlWindow.webContents.openDevTools({ mode: "detach" });
   }
 
-  // Once the control window is ready, push initial status
   controlWindow.webContents.on("did-finish-load", () => {
     notifyStatus();
   });
 }
 
-function createGameWindow() {
-  if (gameWindow && !gameWindow.isDestroyed()) {
-    gameWindow.focus();
-    addLog("[main] Game window already open, focused");
-    return gameWindow;
-  }
-
-  const { cw, gw, height } = getWindowBounds();
-
-  gameWindow = new BrowserWindow({
-    x: 0,     // left side
-    y: 0,
-    width: gw,
-    height: height,
-    minWidth: 350,
-    minHeight: 500,
-    resizable: true,
-    title: "QQ Chess",
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  gameWindow.loadURL(GAME_URL).then(() => {
-    addLog("[main] Game window loaded -> " + GAME_URL);
-  }).catch((err) => {
-    addLog("[main] Game window FAILED to load: " + err.message);
-    dialog.showErrorBox("游戏加载失败", err.message);
-  });
-  addLog("[main] Game window opening -> " + GAME_URL);
-
-  gameWindow.on("closed", () => {
-    gameWindow = null;
-    addLog("[main] Game window closed");
-    if (controlWindow && !controlWindow.isDestroyed()) {
-      controlWindow.webContents.send("game-closed");
-    }
-  });
-
-  if (process.argv.includes("--dev")) {
-    gameWindow.webContents.openDevTools({ mode: "detach" });
-  }
-
-  return gameWindow;
+function getGameWebContents() {
+  return gameWebContents;
 }
 
 // ── Session file watcher ────────────────────────────────────────────────
@@ -360,7 +322,11 @@ function buildMenu() {
         {
           label: "打开游戏窗口",
           accelerator: "CmdOrCtrl+G",
-          click: () => createGameWindow(),
+          click: () => {
+            if (controlWindow && !controlWindow.isDestroyed()) {
+              controlWindow.webContents.send("launch-game", GAME_URL);
+            }
+          },
         },
         {
           label: "打开会话目录",
@@ -448,8 +414,8 @@ function setupIPC() {
 
   ipcMain.handle("launch-game", () => {
     addLog("[main] launch-game clicked");
-    createGameWindow();
-    return true;
+    // Renderer sets webview src directly
+    return { url: GAME_URL };
   });
 
   ipcMain.handle("stop-proxy", () => {
@@ -532,8 +498,8 @@ function setupIPC() {
   });
 
   ipcMain.handle("autoplay-move", async (_event, uci) => {
-    if (!gameWindow || gameWindow.isDestroyed()) {
-      addLog("[autoplay] Game window not available");
+    if (!gameWebContents || gameWebContents.isDestroyed()) {
+      addLog("[autoplay] Game webview not available");
       return false;
     }
     if (!uci || uci.length < 4) {
@@ -543,7 +509,7 @@ function setupIPC() {
     addLog("[autoplay] Injecting move: " + uci);
 
     try {
-      await gameWindow.webContents.executeJavaScript(`
+      await gameWebContents.executeJavaScript(`
         (function(uci) {
           const cols = 'abcdefghi';
           const fc = cols.indexOf(uci[0]);
@@ -656,9 +622,7 @@ app.whenReady().then(async () => {
     await waitForProxy();
   }
 
-  // Auto-launch game window once proxy is running
-  console.log("[main] Opening game window...");
-  createGameWindow();
+  // Game is loaded in webview via "启动游戏" button
 });
 
 app.on("window-all-closed", () => {

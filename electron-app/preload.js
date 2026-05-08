@@ -32,6 +32,11 @@ contextBridge.exposeInMainWorld("qqchess", {
     ipcRenderer.on("proxy-status", handler);
     return () => ipcRenderer.removeListener("proxy-status", handler);
   },
+  onLaunchGame: (callback) => {
+    const handler = (_event, url) => callback(url);
+    ipcRenderer.on("launch-game", handler);
+    return () => ipcRenderer.removeListener("launch-game", handler);
+  },
   onGameClosed: (callback) => {
     const handler = () => callback();
     ipcRenderer.on("game-closed", handler);
