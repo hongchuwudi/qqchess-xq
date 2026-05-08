@@ -16,7 +16,6 @@
     "appId": "com.qqchess.proxy",
     "productName": "QQ象棋协议分析器",
     "extraResources": [
-      { "from": "python", "to": "python" },
       { "from": "../engines", "to": "engines" },
       { "from": "../xq_ws_proxy.py", "to": "xq_ws_proxy.py" }
     ],

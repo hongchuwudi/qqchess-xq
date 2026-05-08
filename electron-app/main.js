@@ -60,11 +60,6 @@ function _resPath(...parts) {
   const base = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
   return path.join(base, ...parts);
 }
-const PYTHON_DIR = app.isPackaged
-  ? path.join(process.resourcesPath, "python")
-  : path.join(__dirname, "python");
-const PYTHON_EXE = path.join(PYTHON_DIR, "python.exe");
-const MITMDUMP_EXE = path.join(PYTHON_DIR, "Scripts", "mitmdump.exe");
 const ADDON_PATH = _resPath("xq_ws_proxy.py");
 const ENGINE_DIR = _resPath("engines", "pikayu-20260131");
 
@@ -145,7 +140,7 @@ function notifyStatus() {
 
 // ── mitmproxy management ────────────────────────────────────────────────
 function isMitmdumpAvailable() {
-  const result = require("child_process").spawnSync(MITMDUMP_EXE, ["--version"], {
+  const result = require("child_process").spawnSync("mitmdump", ["--version"], {
     stdio: "ignore",
     windowsHide: true,
   });
@@ -164,24 +159,18 @@ function startMitmproxy() {
     return false;
   }
 
-  // Ensure mitmproxy is installed in portable Python
   if (!isMitmdumpAvailable()) {
-    addLog("[main] mitmproxy not installed, installing...");
-    const install = require("child_process").spawnSync(PYTHON_EXE, ["-m", "pip", "install", "mitmproxy"], {
-      stdio: "pipe",
-      windowsHide: true,
-      timeout: 120000,
-    });
-    if (install.status !== 0) {
-      addLog("[main] ERROR: mitmproxy install failed");
-      return false;
-    }
-    addLog("[main] mitmproxy installed");
+    addLog("[main] ERROR: mitmdump not found in PATH");
+    dialog.showErrorBox(
+      "mitmproxy 未安装",
+      "请先安装 mitmproxy:\n\npip install mitmproxy\n\n确保 mitmdump 在系统 PATH 中。"
+    );
+    return false;
   }
 
   addLog(`[main] Starting mitmdump on port ${PROXY_PORT}...`);
 
-  mitmProcess = spawn(MITMDUMP_EXE, [
+  mitmProcess = spawn("mitmdump", [
     "--listen-port", String(PROXY_PORT),
     "-s", ADDON_PATH,
     "--set", "block_global=false",
@@ -635,18 +624,8 @@ function setupIPC() {
       });
       if (r.status === 0) { pyPath = cmd; break; }
     }
-    // Also check bundled portable python
-    if (!pyPath && fs.existsSync(PYTHON_EXE)) {
-      const r = require("child_process").spawnSync(PYTHON_EXE, ["--version"], {
-        stdio: "ignore", windowsHide: true, timeout: 5000,
-      });
-      if (r.status === 0) pyPath = PYTHON_EXE;
-    }
-
-    // Check mitmdump
-    if (fs.existsSync(MITMDUMP_EXE)) {
-      mitmOk = true;
-    } else {
+    // Check mitmdump in PATH
+    if (!mitmOk) {
       for (const cmd of mitmCandidates) {
         const r = require("child_process").spawnSync(cmd, ["--version"], {
           stdio: "ignore", windowsHide: true, timeout: 5000,
