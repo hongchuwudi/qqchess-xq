@@ -2,25 +2,30 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>QQ象棋协议分析器 — 初始设置</title>
+  <title>QQ象棋协议分析器 — 环境检测</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, "Microsoft YaHei", "Segoe UI", sans-serif;
-      background: #1a1a2e;
-      color: #e0e0e0;
+      background: #1a1a2e; color: #e0e0e0;
       display: flex; align-items: center; justify-content: center;
       height: 100vh; overflow: hidden;
     }
-    .container {
-      width: 420px; padding: 32px;
-      display: flex; flex-direction: column; gap: 20px;
-    }
-    h1 { font-size: 18px; color: #4fc3f7; text-align: center; }
-    .desc { font-size: 13px; color: #888; text-align: center; line-height: 1.6; }
+    .container { width: 440px; padding: 28px; display: flex; flex-direction: column; gap: 16px; }
+    h1 { font-size: 17px; color: #4fc3f7; text-align: center; }
+    .section { background: #16213e; border-radius: 8px; padding: 14px; }
+    .section-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #ccc; }
+    .check-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 4px 0; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-ok { background: #66bb6a; }
+    .dot-fail { background: #ef5350; }
+    .dot-pending { background: #888; }
+    .guide { font-size: 11px; color: #888; margin-top: 6px; line-height: 1.6; display: none; }
+    .guide a { color: #4fc3f7; }
+    .guide code { background: #0f0f23; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
     .path-box {
       background: #0f0f23; border: 1px solid #2a2a4a; border-radius: 6px;
-      padding: 12px; font-size: 12px; font-family: "Consolas", monospace;
+      padding: 10px; font-size: 11px; font-family: "Consolas", monospace;
       word-break: break-all; color: #81d4fa; text-align: center;
     }
     .actions { display: flex; gap: 8px; }
@@ -30,35 +35,97 @@
       transition: background 0.15s; text-align: center;
     }
     .btn:hover { background: #1e2a4a; }
-    .btn-primary { background: #0288d1; border-color: #0288d1; color: #fff; }
-    .btn-primary:hover { background: #039be5; }
-    .btn-accent { background: #7c4dff; border-color: #7c4dff; color: #fff; }
+    .btn-accent { background: #7c4dff; border-color: #7c4dff; color: #fff; flex: 2; }
     .btn-accent:hover { background: #651fff; }
-    .warn { font-size: 11px; color: #ff7043; text-align: center; }
+    .btn-accent:disabled { background: #555; border-color: #555; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>QQ象棋协议分析器</h1>
-    <div class="desc">
-      对局走子记录、皮卡鱼分析日志将保存在本地目录。<br>
-      <span class="warn">这些是临时数据文件，可随时删除，不影响使用。</span>
+    <h1>QQ象棋协议分析器 — 环境检测</h1>
+
+    <div class="section">
+      <div class="section-title">1. Python 环境</div>
+      <div class="check-row"><span class="dot dot-pending" id="dot-py"></span><span id="txt-py">检测中...</span></div>
+      <div class="guide" id="guide-py">
+        Python 未安装或未添加到 PATH。<br>
+        下载 <a href="#" onclick="shellOpen('https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe')">Python 3.11.9 安装包</a>（64位），<br>
+        安装时<b>务必勾选 "Add Python to PATH"</b>，<br>
+        安装完成后点击下方重新检测。
+      </div>
     </div>
-    <div class="path-box" id="path-display">加载中...</div>
-    <div class="actions">
-      <button class="btn" id="btn-choose">选择目录</button>
-      <button class="btn" id="btn-default">使用默认</button>
+
+    <div class="section">
+      <div class="section-title">2. mitmproxy 代理依赖</div>
+      <div class="check-row"><span class="dot dot-pending" id="dot-mitm"></span><span id="txt-mitm">等待 Python...</span></div>
+      <div class="guide" id="guide-mitm">
+        Python 已安装但 mitmproxy 未安装。<br>
+        打开 CMD 或 PowerShell 执行：<br>
+        <code>pip install mitmproxy</code><br>
+        安装完成后点击下方重新检测。
+      </div>
     </div>
-    <button class="btn btn-accent" id="btn-start">开始使用</button>
+
+    <div class="section">
+      <div class="section-title">3. 数据保存目录</div>
+      <div class="path-box" id="path-display">加载中...</div>
+      <div class="actions" style="margin-top:6px">
+        <button class="btn" id="btn-choose">选择目录</button>
+        <button class="btn" id="btn-default">使用默认</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="btn-retry">重新检测</button>
+      <button class="btn btn-accent" id="btn-start" disabled>开始使用</button>
+    </div>
   </div>
   <script>
-    const { ipcRenderer } = require("electron");
+    const { ipcRenderer, shell } = require("electron");
     const pathDisplay = document.getElementById("path-display");
     let currentDir = "";
+    let pyOk = false, mitmOk = false;
+
+    function shellOpen(url) { shell.openExternal(url); }
+
+    async function detect() {
+      pyOk = false; mitmOk = false;
+      document.getElementById("btn-start").disabled = true;
+      setStatus("dot-py", "dot-pending"); setStatus("dot-mitm", "dot-pending");
+      document.getElementById("guide-py").style.display = "none";
+      document.getElementById("guide-mitm").style.display = "none";
+
+      const res = await ipcRenderer.invoke("detect-python");
+      if (res.py) {
+        pyOk = true; setStatus("dot-py", "dot-ok");
+        document.getElementById("txt-py").textContent = res.pyPath || "Python 已就绪";
+        if (res.mitmproxy) {
+          mitmOk = true; setStatus("dot-mitm", "dot-ok");
+          document.getElementById("txt-mitm").textContent = "mitmproxy 已安装";
+          document.getElementById("btn-start").disabled = false;
+        } else {
+          setStatus("dot-mitm", "dot-fail");
+          document.getElementById("txt-mitm").textContent = "mitmproxy 未安装";
+          document.getElementById("guide-mitm").style.display = "block";
+        }
+      } else {
+        setStatus("dot-py", "dot-fail");
+        document.getElementById("txt-py").textContent = "Python 未检测到";
+        document.getElementById("guide-py").style.display = "block";
+        setStatus("dot-mitm", "dot-fail");
+        document.getElementById("txt-mitm").textContent = "需要先安装 Python";
+      }
+    }
+
+    function setStatus(id, cls) {
+      const el = document.getElementById(id);
+      el.className = "dot " + cls;
+    }
 
     async function init() {
       currentDir = await ipcRenderer.invoke("get-data-dir");
       pathDisplay.textContent = currentDir;
+      await detect();
     }
 
     document.getElementById("btn-choose").addEventListener("click", async () => {
@@ -70,7 +137,10 @@
       pathDisplay.textContent = currentDir;
     });
 
+    document.getElementById("btn-retry").addEventListener("click", detect);
+
     document.getElementById("btn-start").addEventListener("click", () => {
+      if (!pyOk || !mitmOk) return;
       ipcRenderer.send("setup-done", currentDir);
     });
 

@@ -623,6 +623,41 @@ function setupIPC() {
     }
   });
 
+  ipcMain.handle("detect-python", () => {
+    const pythonCandidates = ["python", "python3", "py"];
+    const mitmCandidates = ["mitmdump", "mitmdump.exe"];
+    let pyPath = null, mitmOk = false;
+
+    // Check PATH for python
+    for (const cmd of pythonCandidates) {
+      const r = require("child_process").spawnSync(cmd, ["--version"], {
+        stdio: "ignore", windowsHide: true, timeout: 5000,
+      });
+      if (r.status === 0) { pyPath = cmd; break; }
+    }
+    // Also check bundled portable python
+    if (!pyPath && fs.existsSync(PYTHON_EXE)) {
+      const r = require("child_process").spawnSync(PYTHON_EXE, ["--version"], {
+        stdio: "ignore", windowsHide: true, timeout: 5000,
+      });
+      if (r.status === 0) pyPath = PYTHON_EXE;
+    }
+
+    // Check mitmdump
+    if (fs.existsSync(MITMDUMP_EXE)) {
+      mitmOk = true;
+    } else {
+      for (const cmd of mitmCandidates) {
+        const r = require("child_process").spawnSync(cmd, ["--version"], {
+          stdio: "ignore", windowsHide: true, timeout: 5000,
+        });
+        if (r.status === 0) { mitmOk = true; break; }
+      }
+    }
+
+    return { py: !!pyPath, pyPath, mitmproxy: mitmOk };
+  });
+
   ipcMain.handle("get-data-stats", () => getDataDirStats());
 
   ipcMain.handle("get-data-dir", () => SESSIONS_DIR);
@@ -667,17 +702,16 @@ app.whenReady().then(async () => {
   // Wait for renderer to be ready
   await new Promise((r) => controlWindow.webContents.on("did-finish-load", r));
 
-  // First launch: show setup window
+  // First launch or env not ready: show setup window
   if (!fs.existsSync(CONFIG_PATH)) {
     await new Promise((resolve) => {
       const setupWin = new BrowserWindow({
-        width: 440, height: 380, resizable: false,
-        title: "QQ象棋协议分析器 — 初始设置",
+        width: 460, height: 520, resizable: false,
+        title: "QQ象棋协议分析器 — 环境检测",
         webPreferences: { nodeIntegration: true, contextIsolation: false },
       });
       setupWin.loadFile(path.join(__dirname, "setup.html"));
       setupWin.setMenuBarVisibility(false);
-
       ipcMain.once("setup-done", (_event, dataDir) => {
         if (dataDir && dataDir !== SESSIONS_DIR) {
           fs.mkdirSync(dataDir, { recursive: true });
