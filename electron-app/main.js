@@ -139,7 +139,6 @@ function startMitmproxy() {
     for (const line of _decodeMitm(data).split("\n")) {
       const trimmed = line.trim();
       if (trimmed && !_isResourceLog(trimmed)) {
-        process.stdout.write(trimmed + "\n");
         addLog(trimmed);
       }
     }
@@ -150,7 +149,6 @@ function startMitmproxy() {
     for (const line of _decodeMitm(data).split("\n")) {
       const trimmed = line.trim();
       if (trimmed) {
-        process.stderr.write("[stderr] " + trimmed + "\n");
         addLog("[stderr] " + trimmed);
       }
     }
