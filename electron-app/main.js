@@ -26,12 +26,14 @@ let pikafish = null;
 // ── Log management ──────────────────────────────────────────────────────
 let _statusTimer = null;
 
-// Filter out mitmdump HTTP resource logs — keep only QQ Chess addon output
+// Filter out mitmdump HTTP/WS resource logs — keep only QQ Chess addon output
 function _isResourceLog(line) {
-  // mitmdump traffic: "IP:PORT: METHOD URL" or "IP:PORT: ← STATUS"
-  if (/^\d+\.\d+\.\d+\.\d+:\d+:/.test(line)) return true;
-  if (/\s*←\s+\d{3}/.test(line)) return true;
-  // mitmdump connection messages (server connect, client disconnect, etc.)
+  // HTTP response status: "<< HTTP/2.0 304 Not Modified 0b"
+  if (/<<\s+HTTP\/\d/i.test(line)) return true;
+  // WS flow: "IP:PORT -> WebSocket binary message -> HOST"
+  // WS flow: "IP:PORT <- WebSocket binary message <- HOST"
+  if (/\d+\.\d+\.\d+\.\d+:\d+\s*(->|<-)\s*WebSocket/i.test(line)) return true;
+  // TCP connection messages
   if (/(?:server|client)\s+(?:connection|disconnect)/i.test(line)) return true;
   return false;
 }
@@ -113,7 +115,7 @@ function startMitmproxy() {
   ], {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
-    env: { ...process.env, PYTHONUNBUFFERED: "1" },
+    env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONIOENCODING: "utf-8" },
   });
 
   mitmProcess.stdout.on("data", (data) => {
