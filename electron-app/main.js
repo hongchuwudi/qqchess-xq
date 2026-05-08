@@ -627,8 +627,9 @@ function setupIPC() {
 
   ipcMain.handle("get-data-dir", () => SESSIONS_DIR);
 
-  ipcMain.handle("choose-data-dir", async () => {
-    const result = await dialog.showOpenDialog(controlWindow, {
+  ipcMain.handle("choose-data-dir", async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const result = await dialog.showOpenDialog(win, {
       title: "选择对局数据保存目录",
       message: "对局走子记录、会话日志将保存在此目录。\n这些是临时数据文件，可随时清理。",
       properties: ["openDirectory", "createDirectory"],
@@ -666,31 +667,29 @@ app.whenReady().then(async () => {
   // Wait for renderer to be ready
   await new Promise((r) => controlWindow.webContents.on("did-finish-load", r));
 
-  // First launch: ask user to choose data directory
+  // First launch: show setup window
   if (!fs.existsSync(CONFIG_PATH)) {
-    const { response } = await dialog.showMessageBox(controlWindow, {
-      type: "info",
-      title: "选择数据保存位置",
-      message: "对局走子记录、会话日志需要保存到本地目录。\n\n这些是临时数据文件，可随时清理。",
-      buttons: ["选择目录", "使用默认位置"],
-      defaultId: 0,
-    });
-    if (response === 0) {
-      const result = await dialog.showOpenDialog(controlWindow, {
-        title: "选择数据保存目录",
-        properties: ["openDirectory", "createDirectory"],
+    await new Promise((resolve) => {
+      const setupWin = new BrowserWindow({
+        width: 440, height: 380, resizable: false,
+        title: "QQ象棋协议分析器 — 初始设置",
+        webPreferences: { nodeIntegration: true, contextIsolation: false },
       });
-      if (!result.canceled && result.filePaths.length > 0) {
-        const newDir = path.join(result.filePaths[0], "QQ象棋数据");
-        fs.mkdirSync(newDir, { recursive: true });
-        SESSIONS_DIR = newDir;
-        saveConfig("dataDir", newDir);
-      }
-    }
-    if (!fs.existsSync(CONFIG_PATH)) {
-      saveConfig("dataDir", SESSIONS_DIR);
-    }
-    addLog("[main] 数据目录: " + SESSIONS_DIR);
+      setupWin.loadFile(path.join(__dirname, "setup.html"));
+      setupWin.setMenuBarVisibility(false);
+
+      ipcMain.once("setup-done", (_event, dataDir) => {
+        if (dataDir && dataDir !== SESSIONS_DIR) {
+          fs.mkdirSync(dataDir, { recursive: true });
+          SESSIONS_DIR = dataDir;
+        }
+        saveConfig("dataDir", SESSIONS_DIR);
+        addLog("[main] 数据目录: " + SESSIONS_DIR);
+        setupWin.close();
+        resolve();
+      });
+      setupWin.on("closed", () => resolve());
+    });
   }
 
   // Start Pikafish engine

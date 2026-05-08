@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>QQ象棋协议分析器 — 初始设置</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, "Microsoft YaHei", "Segoe UI", sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      display: flex; align-items: center; justify-content: center;
+      height: 100vh; overflow: hidden;
+    }
+    .container {
+      width: 420px; padding: 32px;
+      display: flex; flex-direction: column; gap: 20px;
+    }
+    h1 { font-size: 18px; color: #4fc3f7; text-align: center; }
+    .desc { font-size: 13px; color: #888; text-align: center; line-height: 1.6; }
+    .path-box {
+      background: #0f0f23; border: 1px solid #2a2a4a; border-radius: 6px;
+      padding: 12px; font-size: 12px; font-family: "Consolas", monospace;
+      word-break: break-all; color: #81d4fa; text-align: center;
+    }
+    .actions { display: flex; gap: 8px; }
+    .btn {
+      flex: 1; padding: 10px 0; border: 1px solid #2a2a4a; border-radius: 6px;
+      background: #16213e; color: #e0e0e0; font-size: 13px; cursor: pointer;
+      transition: background 0.15s; text-align: center;
+    }
+    .btn:hover { background: #1e2a4a; }
+    .btn-primary { background: #0288d1; border-color: #0288d1; color: #fff; }
+    .btn-primary:hover { background: #039be5; }
+    .btn-accent { background: #7c4dff; border-color: #7c4dff; color: #fff; }
+    .btn-accent:hover { background: #651fff; }
+    .warn { font-size: 11px; color: #ff7043; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>QQ象棋协议分析器</h1>
+    <div class="desc">
+      对局走子记录、皮卡鱼分析日志将保存在本地目录。<br>
+      <span class="warn">这些是临时数据文件，可随时删除，不影响使用。</span>
+    </div>
+    <div class="path-box" id="path-display">加载中...</div>
+    <div class="actions">
+      <button class="btn" id="btn-choose">选择目录</button>
+      <button class="btn" id="btn-default">使用默认</button>
+    </div>
+    <button class="btn btn-accent" id="btn-start">开始使用</button>
+  </div>
+  <script>
+    const { ipcRenderer } = require("electron");
+    const pathDisplay = document.getElementById("path-display");
+    let currentDir = "";
+
+    async function init() {
+      currentDir = await ipcRenderer.invoke("get-data-dir");
+      pathDisplay.textContent = currentDir;
+    }
+
+    document.getElementById("btn-choose").addEventListener("click", async () => {
+      const dir = await ipcRenderer.invoke("choose-data-dir");
+      if (dir) { currentDir = dir; pathDisplay.textContent = dir; }
+    });
+
+    document.getElementById("btn-default").addEventListener("click", () => {
+      pathDisplay.textContent = currentDir;
+    });
+
+    document.getElementById("btn-start").addEventListener("click", () => {
+      ipcRenderer.send("setup-done", currentDir);
+    });
+
+    init();
+  </script>
+</body>
+</html>
