@@ -10,8 +10,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^39.2.3",
-    "electron-builder": "^26.0.12"
+    "electron": "^39.2.3"
   },
   "build": {
     "appId": "com.qqchess.proxy",
@@ -22,8 +21,7 @@
       { "from": "../xq_ws_proxy.py", "to": "xq_ws_proxy.py" }
     ],
     "win": {
-      "target": "nsis",
-      "icon": null
+      "target": "nsis"
     },
     "nsis": {
       "oneClick": false,
