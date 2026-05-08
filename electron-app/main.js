@@ -595,6 +595,7 @@ app.whenReady().then(async () => {
   addLog("[main] ========================================");
   addLog(`[main] QQ Chess Proxy starting -- ${new Date().toLocaleString()}`);
   addLog(`[main] port: ${PROXY_PORT}  |  game: ${GAME_URL}`);
+  addLog(`[main] 数据目录: ${SESSIONS_DIR}`);
   addLog("[main] ========================================");
 
   buildMenu();
