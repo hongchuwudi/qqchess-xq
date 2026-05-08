@@ -740,23 +740,23 @@ async function restoreMovesFromSession() {
     _currentFen = INITIAL_FEN;
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
 
+    // Determine _userSide from first SEND move's camp BEFORE replaying
+    for (const m of data) {
+      if (m.direction === "SEND" && m.camp) {
+        _userSide = m.camp === "red" ? "w" : "b";
+        updateMySide();
+        break;
+      }
+    }
+
+    // Now replay with correct _userSide for proxyToFenUci
     for (const m of data) {
       const uci = m.uci;
       if (!uci) continue;
       const fenUci = proxyToFenUci(uci);
       const sent = m.direction === "SEND";
-      // Use proxy camp info for side detection (authoritative)
-      if (_userSide === null && sent && m.camp) {
-        _userSide = m.camp === "red" ? "w" : "b";
-        updateMySide();
-      }
       const result = GameStateTracker.applyMove(fenUci, sent);
       if (result) {
-        // Fallback: detect user side from first SENT move piece color
-        if (_userSide === null && sent) {
-          _userSide = result.isRed ? "w" : "b";
-          updateMySide();
-        }
         parsedMoves.push({ num: m.num, uci: fenUci, sent, chinese: result.chinese });
         setLastMove(fenUci);
       }
@@ -871,10 +871,10 @@ window.qqchess.onLogLine((data) => {
     dom.engineFen.textContent = INITIAL_FEN;
   }
 
-  // 86001 arrives — try to restore from saved session (covers reconnect + new game)
+  // 86001 arrives — try to restore from saved session immediately
   if (data.text.includes("[86001] tableID=")) {
     _lastLoadedMovesFile = null;
-    setTimeout(() => restoreMovesFromSession(), 300);
+    restoreMovesFromSession();
   }
 
   // Clear engine + moves when game ends (websocket disconnect or game over)
