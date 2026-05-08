@@ -677,12 +677,9 @@ app.whenReady().then(async () => {
 
   // First launch: show setup panel in main window
   if (!fs.existsSync(CONFIG_PATH)) {
-    // Use default data dir for now, user can change in setup panel
     saveConfig("dataDir", SESSIONS_DIR);
-    // Tell renderer to show setup panel after it loads
-    controlWindow.webContents.on("did-finish-load", () => {
-      setTimeout(() => controlWindow.webContents.send("show-setup"), 1000);
-    });
+    // Page already loaded by now — send directly
+    setTimeout(() => controlWindow.webContents.send("show-setup"), 500);
   }
 
   // Start Pikafish engine
