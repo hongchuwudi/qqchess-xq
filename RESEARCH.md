@@ -1,7 +1,8 @@
 # 天天象棋 (QQ Chess XQ) 网络协议逆向工程 — 完整研究报告
 
-> 最后更新: 2026-05-07
+> 最后更新: 2026-05-09
 > 作者: Claude Code 协助分析
+> 状态: 协议层完整破解，Electron 封装接近成品
 
 ---
 
@@ -20,7 +21,10 @@
 11. [反作弊与安全体系](#11-反作弊与安全体系)
 12. [工具套件文档](#12-工具套件文档)
 13. [Electron 封装方案](#13-electron-封装方案)
-14. [已知问题与未来方向](#14-已知问题与未来方向)
+14. [对局状态追踪与阵营检测](#14-对局状态追踪与阵营检测)
+15. [棋盘渲染与 AI 引擎集成](#15-棋盘渲染与-ai-引擎集成)
+16. [重连恢复与对局边界检测](#16-重连恢复与对局边界检测)
+17. [已知问题与未来方向](#17-已知问题与未来方向)
 
 ---
 
@@ -813,29 +817,35 @@ PC       → 检测进程列表 + 注册表
 
 ```
 qqchess-xq/
-├── xq_ws_proxy.py          # [核心] mitmproxy 实时抓包 addon
+├── xq_ws_proxy.py          # [核心] mitmproxy 实时抓包 addon (800+ 行)
 ├── har_analyzer.py          # HAR 离线文件分析器
 ├── xq_analyzer.py           # 棋局实时分析 + AI 引擎对接
 ├── xq_decode.py             # JCE 二进制手动解码器 (交互式)
-├── tea_decrypt.py           # TEA-CBC 独立解密器
+├── tea_decrypt.py           # [早期] 小端 XXTEA 实验版本
 ├── download_qqchess.py      # 下载 QQ 象棋 H5 客户端
 ├── _find_key.py             # [工具] 从登录消息提取 sSecKey
 ├── _fix_session.py          # [工具] 修复/回放已保存的会话
 ├── _brute_key.py            # [工具] 暴力尝试会话密钥
-├── electron-app/            # Electron 封装 (一键启动)
+├── electron-app/            # Electron 封装 (一键启动 + 棋盘 + 引擎)
+│   ├── main.js              #   主进程: mitmproxy 管理 + IPC
+│   ├── renderer.js          #   渲染进程: 棋盘 + 日志 + 引擎 UI (1100+ 行)
+│   ├── pikafish-bridge.js   #   皮卡鱼引擎 UCCI 协议桥接
+│   ├── preload.js           #   安全桥接 (contextBridge)
+│   ├── index.html           #   控制台界面
+│   └── style.css            #   样式
 ├── data/
 │   ├── h5login.qqchess.qq.com.har  # 127 MB HAR 抓包
 │   └── sessions/                   # 代理会话输出 (qqchess_*.json)
 ├── qqchess_src/             # 下载的游戏客户端源码
 ├── docs/                    # 分析文档
-├── engines/                 # 象棋引擎 (皮卡鱼等)
+├── engines/                 # 象棋引擎 (皮卡鱼 pikayu)
 ├── CLAUDE.md                # 项目说明书
 └── RESEARCH.md              # 本文档
 ```
 
 ### 12.2 xq_ws_proxy.py — mitmproxy 实时抓包插件
 
-**核心模块，200+ 行 TEA 实现 + 300+ 行 JCE 解析器 + mitmproxy 事件钩子**
+**核心模块，250+ 行 TEA（加密+解密）+ 350+ 行 JCE 解析器 + mitmproxy 事件钩子**
 
 ```bash
 # 启动
@@ -853,11 +863,30 @@ websocket_message → ① unwrap_ws() 剥离帧头
                     ② parse_pkg() JCE 解析 TPackage
                     ③ 检测 85001 (登录响应) → derive_session_key()
                     ④ 检测 iFlag & 1 → tea_zjb_decrypt()
-                    ⑤ 检测 86004/86005/86006 → parse_game_event() → find_moves_in_vec()
-                    ⑥ 记录 raw + decoded + moves
+                    ⑤ 检测 86001 → 解析游戏上下文 → 对局边界检测
+                    ⑥ 检测 86004/86005/86011 → parse_request_play / parse_game_event
+                       → find_moves_in_vec() → 坐标提取 + 评分
+                    ⑦ 检测 85075/86006 → 对局结束检测
+                    ⑧ 记录 raw + decoded + moves
        ↓
-websocket_end    → _save() 写入 5 个 JSON 文件
+websocket_end    → _save(force=True) 强制写入 4 个 JSON 文件
 ```
+
+**完整实现的功能**:
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| TEA-CBC 解密 (zJb) | ✅ | 完全匹配 JS 客户端，大端标准 TEA，16 轮 |
+| TEA-CBC 加密 (Aad) | ✅ | 完整实现，含随机头尾填充 |
+| JCE 解析 (TPackage/TMsg) | ✅ | 支持全部 14 种 JCE 类型，嵌套结构 |
+| 登录密钥派生 | ✅ | 85001 → sSecKey + uUin → sessionKey |
+| 走子坐标提取 | ✅ | 含评分机制，SEND/RECV 双路径 |
+| 阵营检测 | ✅ | 首步 SEND → red，RECV → black |
+| FEN 提取 | ✅ | 从 eventID=63 (MIDGAME) 提取完整 FEN |
+| 对局边界检测 | ✅ | 86001 tableID 变化 → 新局；85075/86006 → 终局 |
+| 重连恢复 | ✅ | 同 tableID + game_active → 保持状态不清除 |
+| 多局累积 | ✅ | 每局走子带 game_idx 标记，按局分组 |
+| 节流保存 | ✅ | 3 秒节流，断开时强制写入 |
 
 **输出文件** (保存到 `data/sessions/`):
 
@@ -891,10 +920,13 @@ python har_analyzer.py data/h5login.qqchess.qq.com.har
 python xq_analyzer.py --har data/h5login.qqchess.qq.com.har
 
 # 回放已保存的代理会话
-python xq_analyzer.py --session data/sessions/qqchess_ws_raw_20260506_174656.json
+python xq_analyzer.py --session data/sessions/qqchess_ws_raw_*.json
 
 # 演示模式 (模拟对局)
 python xq_analyzer.py --demo
+
+# 代理模式 (实时分析)
+python xq_analyzer.py --proxy
 ```
 
 核心类：
@@ -902,6 +934,8 @@ python xq_analyzer.py --demo
 - **`GameStateTracker`**: 完整对局状态追踪 (走子应用、棋谱记录)
 - **`ChessEngine`**: AI 引擎接口 (内置简易评估 + 皮卡鱼对接)
 - **`analyze_session()`**: 会话回放，详细的 msgID 时间线和分类统计
+
+**注意**: `xq_analyzer.py` 和 Electron `renderer.js` 中有两套并行的 `GameStateTracker` 实现（Python 版和 JavaScript 版），功能基本对等。JS 版本额外支持中文记谱、棋盘翻转、引擎 UI 集成。
 
 ### 12.5 xq_decode.py — JCE 交互式解码器
 
@@ -924,23 +958,16 @@ python xq_decode.py --file messages.txt
 - 检测 FEN 和走子坐标候选
 - 小整数上下文分析
 
-### 12.6 tea_decrypt.py — TEA 解密器
+### 12.6 tea_decrypt.py — TEA 解密器 [实验版]
+
+**⚠ 此文件为早期实验版本，使用小端 XXTEA 变体，不与 JS 客户端匹配。**
+
+当前工作版本位于 `xq_ws_proxy.py`（大端标准 TEA）。
 
 ```bash
-# 使用已知密钥解密
-python tea_decrypt.py --key <32 hex chars> --raw data/sessions/qqchess_ws_raw_*.json
-
-# 从 uin + sSecKey 派生密钥
-python tea_decrypt.py --uin 123456789 --sSecKey <sSecKey_hex> --raw data/sessions/qqchess_ws_raw_*.json
-
-# 分析 HAR 文件
-python tea_decrypt.py --har data/h5login.qqchess.qq.com.har --uin 123 --sSecKey abc...
-
 # 自测
 python tea_decrypt.py --test
 ```
-
-**注意**: 此文件的 TEA 实现为小端 XXTEA 变体，是早期实验版本。`xq_ws_proxy.py` 中的大端标准 TEA 实现才是与 JS 客户端匹配的正确版本。
 
 ### 12.7 辅助工具
 
@@ -1000,150 +1027,493 @@ python tea_decrypt.py --test
 
 ## 13. Electron 封装方案
 
-### 13.1 架构
+### 13.1 架构全景
 
 ```
-┌───────────────────────────────────────────┐
-│           Electron Main Process           │
-│                                           │
-│  ┌─────────────┐  ┌───────────────────┐   │
-│  │ mitmdump     │  │ session.setProxy()│   │
-│  │ child_process│  │ → 127.0.0.1:8888 │   │
-│  │ -s xq_ws_   │  └───────────────────┘   │
-│  │   proxy.py  │                          │
-│  └─────────────┘                          │
-│                                           │
-│  ┌───────────────────────────────────┐    │
-│  │ BrowserWindow                     │    │
-│  │ → https://h5login.qqchess.qq.com  │    │
-│  └───────────────────────────────────┘    │
-└───────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    Electron Main Process                     │
+│                                                              │
+│  ┌──────────────┐  ┌────────────────────────────────────┐    │
+│  │ mitmdump      │  │ session.setProxy()                │    │
+│  │ child_process │  │ → 127.0.0.1:8888                 │    │
+│  │ -s xq_ws_    │  │ (仅 webview，不影响系统代理)      │    │
+│  │   proxy.py   │  └────────────────────────────────────┘    │
+│  └──────┬───────┘                                            │
+│         │ stdout pipe                                        │
+│  ┌──────┴───────┐  ┌────────────────────────────────────┐    │
+│  │ 日志解析      │  │ Pikafish Bridge (UCCI 协议)       │    │
+│  │ GBK/UTF-8    │  │ stdin/stdout 双向通信              │    │
+│  │ 过滤 + 分类   │  │ analyze(fen, moves) → {best,score}│    │
+│  └──────┬───────┘  └────────────────────────────────────┘    │
+│         │ IPC push                                           │
+│  ┌──────┴──────────────────────────────────────────────┐    │
+│  │              IPC Handlers (12+)                      │    │
+│  │  proxy管理 | 日志查询 | 会话文件 | 引擎分析 | 自动走子│    │
+│  │  数据统计 | 清理 | 设置 | Python检测 | 目录选择      │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │ fs.watch(SESSIONS_DIR) → session-file-changed event  │    │
+│  │ 触发: 防抖清理检查 (5s)                              │    │
+│  └──────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────┘
+         │
+         │ IPC (contextBridge)
+         ▼
+┌──────────────────────────────────────────────────────────────┐
+│              Electron Renderer Process                       │
+│                                                              │
+│  ┌─────────────────┐  ┌────────────────────────────────┐     │
+│  │ Webview         │  │ 控制台 UI                      │     │
+│  │ h5login.qqchess │  │ ┌──────────┐ ┌──────────────┐ │     │
+│  │ .qq.com         │  │ │ 棋盘画布  │ │ 引擎分析面板 │ │     │
+│  │ (Cocos Creator) │  │ │ (canvas) │ │ bestmove/score│ │     │
+│  │                 │  │ │          │ │ depth/pv     │ │     │
+│  │                 │  │ │ 走子列表  │ │ fen          │ │     │
+│  │                 │  │ │ 红方/黑方│ │              │ │     │
+│  │                 │  │ └──────────┘ └──────────────┘ │     │
+│  │                 │  │ ┌──────────────────────────┐  │     │
+│  │                 │  │ │ 实时日志 (过滤+分类)     │  │     │
+│  └─────────────────┘  │ └──────────────────────────┘  │     │
+│                       └────────────────────────────────┘     │
+│                                                              │
+│  GameStateTracker: FEN解析 → UCI走子 → 中文记谱 → 棋盘更新   │
+│  restoreMovesFromSession: 断连重连 → 回放当前局走子          │
+│  _gameActive 标记: 区分新局 vs 重连                          │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### 13.2 核心代码
+### 13.2 主进程 (main.js) 核心模块
 
+**mitmproxy 生命周期管理**:
 ```javascript
-// main.js 关键部分
-
-// 1. 启动 mitmproxy
-function startMitmproxy() {
-    mitmProcess = spawn("mitmdump", [
-        "--listen-port", "8888",
-        "-s", "../xq_ws_proxy.py",
-        "--set", "block_global=false",
-        "--ssl-insecure",
-    ]);
+// GBK/UTF-8 双编码自动检测（Windows 中文环境兼容）
+function _decodeMitm(buf) {
+    try { return new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+    catch (_) { return _gbkDecoder.decode(buf); }
 }
 
-// 2. 自动配置代理 (无需手动设 Windows 代理!)
-function configureSession() {
-    session.defaultSession.setProxy({
-        proxyRules: "http://127.0.0.1:8888",
-        proxyBypassRules: "<-loopback>",
-    });
-    
-    // 忽略 mitmproxy 的 CA 证书错误
-    app.commandLine.appendSwitch("ignore-certificate-errors");
-    session.defaultSession.setCertificateVerifyProc((req, cb) => cb(0));
+// 资源日志过滤 — 只保留 QQ Chess addon 输出
+function _isResourceLog(line) {
+    // 过滤 HTTP 请求、WS 流、TCP 连接等 mitmdump 自身日志
 }
 
-// 3. 加载游戏
-function createWindow() {
-    const win = new BrowserWindow({ width: 430, height: 700 });
-    win.loadURL("https://h5login.qqchess.qq.com/");
+// 健康检查 — TCP 端口探测，最多 8 秒
+async function waitForProxy(timeoutMs = 8000) { ... }
+```
+
+**Pikafish 引擎桥接** (`pikafish-bridge.js`):
+```javascript
+// UCCI 协议 (Universal Chinese Chess Interface)
+// 双向通信: stdin → 引擎, stdout → 解析
+class PikafishBridge {
+    start()    // 启动引擎进程，等待 ucciok 握手
+    stop()     // 发送 quit，清理进程
+    analyze(fen, moveList)  // position fen ... moves ... → go depth 18
+    // 解析输出: info depth N score cp X pv ..., bestmove XXXX
 }
 ```
 
-### 13.3 优势
-
-- 一键启动，零配置
-- 无需手动设置 Windows 系统代理
-- 无需安装 mitmproxy CA 证书
-- 游戏加载和抓包完全自动化
-- 抓包数据自动保存到 `data/sessions/`
-
-### 13.4 启动方式
-
-```bash
-cd electron-app
-npm start
+**会话文件监听 + 自动清理**:
+```javascript
+// fs.watch 监听 sessions 目录
+// 新文件写入 → 通知 renderer → 防抖 5s 后检查大小
+// 超过 100MB → cleanupOldData() 从最旧文件开始删除
 ```
 
-前提条件：
-- `mitmdump` 在 PATH 中：`pip install mitmproxy`
-- 依赖已安装：`cnpm install`
+**IPC 接口清单** (14 个 handler):
+| Handler | 功能 |
+|---------|------|
+| `get-proxy-status` | 代理运行状态 + PID + 统计 |
+| `get-logs` | 获取最近 200 条日志 |
+| `start-proxy / stop-proxy / restart-proxy` | 代理控制 |
+| `get-session-files / read-session-file` | 会话文件管理 |
+| `analyze-position` | 皮卡鱼引擎分析 (fen + moves → bestmove) |
+| `autoplay-move` | 自动走子注入 (executeJavaScript 模拟 PointerEvent) |
+| `detect-python` | 检测 Python + mitmproxy 可用性 |
+| `get-data-stats / cleanup-old-data` | 数据统计 + 自动清理 |
+| `choose-data-dir` | 用户选择数据目录 |
+
+### 13.3 渲染进程 (renderer.js) 核心模块
+
+**GameStateTracker** — 中国象棋棋盘状态机:
+```javascript
+// 初始 FEN → parseFen(grid) → applyMove(uci, sent) → toFen(grid, side)
+// 支持: UCI 走子验证、FEN 坐标翻转 (红方/黑方视角)
+// 中文记谱: _toChinese(uci, piece, fc, fr, tc, tr)
+//   例: h2e2 红炮 → "炮二平五"
+```
+
+**棋盘渲染** (Canvas 2D):
+- 9×10 网格 + 楚河汉界 + 九宫对角线
+- 列标注: 红方视角九~一，黑方视角 1~9
+- 棋子: 圆形 + 双线边框 + 中文篆体字
+- 红方/黑方翻转: `proxyToFenUci()` 处理坐标映射
+- 上一步走子: 绿色光晕 + 箭头
+- 引擎推荐走法: 琥珀色方块 + 实线箭头
+
+**实时日志处理**:
+```javascript
+// 每条日志行经过 classifyLine() 分类:
+//   move | login | key | error | system | gamedone | msg
+// 关键事件触发:
+//   [CAMP] → 权威阵营赋值 (_userSide)
+//   [MIDGAME] fen=... → 中局加入，重置棋盘到当前 FEN
+//   [MOVE #N] → 走子解析 + 去重 + 回声过滤
+//   [GAME] 开始 → 重置全部状态 + _gameActive = true
+//   [GAME] 结束 → 清除状态 + _gameActive = false
+//   [86001] tableID= → 仅重连时 restore (检查 _gameActive)
+```
+
+**引擎分析调度**:
+```javascript
+// 300ms 防抖，每步走子后自动触发
+// 发送完整 moveList → 引擎知道当前轮到谁走
+// 分析结果: bestmove UCI → 转中文记谱 → 画到棋盘上
+// 自动走子模式: opponent moves → analyze → autoPlayMove(bestmove)
+```
+
+### 13.4 打包配置
+
+```json
+// package.json build 配置
+{
+  "win": { "target": ["nsis", "portable"] },   // 安装版 + 绿色版
+  "mac": { "target": "dmg" },                   // macOS 磁盘映像
+  "linux": { "target": "AppImage" },            // Linux AppImage
+  "extraResources": [                           // 打包进安装包
+    { "from": "../engines", "to": "engines" },  // 皮卡鱼引擎
+    { "from": "../xq_ws_proxy.py", "to": "xq_ws_proxy.py" }
+  ]
+}
+
+// 打包命令:
+npm run build          // Windows (nsis + portable)
+npm run build:mac      // macOS .dmg
+npm run build:linux    // Linux .AppImage
+npm run build:all      // 全平台
+```
+
+### 13.5 优势
+
+- **一键启动**: 自动配代理 + 启动 mitmproxy + 加载游戏
+- **零系统配置**: 不影响 Windows 系统代理 (仅 webview session)
+- **内置棋盘**: Canvas 渲染，支持红方/黑方翻转
+- **引擎集成**: 皮卡鱼 UCCI 协议，实时分析 + 自动走子
+- **断连恢复**: 走子回放，不丢失对局记录
+- **数据管理**: 自动清理超过 100MB 的旧数据
+- **跨平台打包**: Windows/macOS/Linux 三平台
 
 ---
 
-## 14. 已知问题与未来方向
+## 14. 对局状态追踪与阵营检测
 
-### 14.1 已实现
+### 14.1 阵营检测机制
+
+检测玩家执红还是执黑是棋盘正确渲染的前提。阵营检测有三条路径，优先级递减：
+
+**路径 1: Proxy [CAMP] 日志（最权威）**
+```python
+# xq_ws_proxy.py: 首步走子的方向决定阵营
+if self.my_camp is None and self.move_n == 1:
+    self.my_camp = 'red' if direction == 'SEND' else 'black'
+    ctx.log.info(f"[CAMP] first move is {direction} → {self.my_camp}")
+```
+- 原理: 中国象棋红方先走，服务端 86005 转发的是走子方信息
+- 如果第一步是客户端 SEND → 玩家执红
+- 如果第一步是服务端 RECV → 玩家执黑
+
+**路径 2: Renderer 首步 SEND piece color（次权威）**
+```javascript
+// renderer.js: 首步 SEND 走子的棋子颜色决定阵营
+if (_userSide === null && mv.sent) {
+    _userSide = result.isRed ? "w" : "b";
+}
+```
+
+**路径 3: 会话文件恢复中的 camp 字段**
+```javascript
+// restoreMovesFromSession: 从保存的 camp 字段恢复
+if (m.direction === "SEND" && m.camp) {
+    _userSide = m.camp === "red" ? "w" : "b";
+}
+```
+
+### 14.2 FEN 坐标与阵营翻转
+
+**核心问题**: Proxy 使用玩家相对坐标（row 5-9 = 玩家棋子），FEN 使用绝对坐标（row 0 = 黑方底线）。
+
+```
+红方玩家 (userSide="w"): proxy 坐标 == FEN 坐标
+黑方玩家 (userSide="b"): proxy 坐标需要 9-row 翻转
+  例: proxy row 0 → FEN row 9, proxy row 9 → FEN row 0
+```
+
+```javascript
+// renderer.js: proxy 坐标 → FEN 坐标
+function proxyToFenUci(uci) {
+    if (_userSide !== "b") return uci;
+    const fr = parseInt(uci[1]), tr = parseInt(uci[3]);
+    return uci[0] + (9 - fr) + uci[2] + (9 - tr);
+}
+```
+
+### 14.3 中局加入 (eventID=63)
+
+当玩家在中局加入观战或重连已进行的对局时，服务端发送 eventID=63 消息，包含当前完整 FEN：
+```python
+# xq_ws_proxy.py
+if ev['nEventID'] == 63 and ev['vecMsgBody']:
+    fen = extract_fen(ev['vecMsgBody'])
+    if fen:
+        ctx.log.info(f"[MIDGAME] fen={fen}")
+```
+
+Renderer 收到后直接以该 FEN 重置棋盘，清空走子历史，从当前位置继续。
+
+### 14.4 阵营检测的已知陷阱
+
+| 陷阱 | 说明 | 解决方案 |
+|------|------|---------|
+| Proxy 坐标 ≠ FEN 坐标 | proxy 使用玩家视角相对坐标 | `proxyToFenUci()` 根据 `_userSide` 翻转 |
+| 观战模式 | 没有 SEND 消息，无法检测阵营 | 仅通过 [CAMP] 日志或 [MIDGAME] FEN 获取 |
+| 引擎分析需要完整历史 | 引擎需要 moveList 知道轮到谁走 | 发送完整的 `parsedMoves` 给引擎 |
+| 多局累积 camp 混淆 | 新一局可能复用上局的 camp | 新局强制重置 `_userSide = null` |
+
+---
+
+## 15. 棋盘渲染与 AI 引擎集成
+
+### 15.1 Canvas 棋盘渲染
+
+```
+棋盘规格: 300×330 px, 边距 ML=24 MR=12 MT=12 MB=12
+列间距: DX = BW/8 ≈ 33px, 行间距: DY = BH/9 ≈ 34px
+棋子半径: RR = 13px
+```
+
+**渲染层次** (由底到顶):
+1. 棋盘底色 (`#e8d5b0`)
+2. 网格线 (9 竖 × 10 横，楚河汉界断线)
+3. 楚河汉界文字 ("楚  河" / "漢  界")
+4. 九宫对角线
+5. 列标注 (红方视角九~一，黑方 1~9)
+6. 棋子 (圆形 + 双线边框 + 中文)
+7. 上一步走子指示 (绿色光晕 + 箭头)
+8. 引擎推荐走法 (琥珀色方块 + 箭头)
+
+### 15.2 中文记谱转换
+
+```javascript
+// UCI → 中文象棋记谱
+_toChinese(uci, piece, fc, fr, tc, tr) {
+    // 红方列名: 九八七六五四三二一
+    // 黑方列名: 1 2 3 4 5 6 7 8 9
+    // 直线棋子 (车炮将兵): 进退用距离数字
+    // 斜线棋子 (马象士): 进退用目标列名
+}
+// 例: "h2e2" 红炮 → "炮八平五"
+//     "b0c2" 红马 → "馬八進七"
+```
+
+### 15.3 皮卡鱼引擎集成
+
+**UCCI 协议** (Universal Chinese Chess Interface):
+```
+→ ucci
+← ucciok
+→ position fen {fen} moves {move_list}
+→ go depth 18
+← info depth 10 score cp 42 pv h2e2 b7e7 ...
+← bestmove h2e2
+```
+
+**分析流程**:
+1. 每步走子后 300ms 防抖触发 `scheduleAnalysis(fen, isOpponentMove)`
+2. 发送完整 moveList → 引擎知道当前局面和轮到谁走
+3. 引擎返回 `{bestMove, score, depth, pv}`
+4. UI 更新: bestmove (中英文) + score + depth + pv 变着
+5. 自动走子模式: opponent moves → analysis → `autoPlayMove(bestmove)`
+
+**自动走子注入**:
+```javascript
+// main.js: executeJavaScript 注入到 webview
+// 计算棋盘 canvas 坐标 → dispatchEvent(PointerEvent)
+// 模拟 pointerdown → pointerup (起手) → 180ms delay → pointerdown → pointerup (落子)
+```
+
+### 15.4 回声过滤
+
+```
+场景: 玩家走子 → SEND 86004 → 服务端转发 RECV 86005 (回声)
+问题: 回声的 UCI 和玩家刚走的完全相同，会重复记录
+解决: 2 秒时间窗口 + UCI 匹配过滤
+  if (!mv.sent && mv.uci === _lastSentUci && Date.now() - _lastSentTime < 2000) {
+      return; // skip echo
+  }
+```
+
+---
+
+## 16. 重连恢复与对局边界检测
+
+### 16.1 对局生命周期
+
+```
+对局开始 ←→ 对局进行中 ←→ 对局结束
+   │           │              │
+  86001     86004/86005    85075/86006×2
+  (新局)   (走子)         (结算)
+```
+
+**Proxy 侧检测**:
+```python
+# 新局: 86001 + tableID 变化
+if table_changed:
+    if self._game_active: self._end_game('new_table')
+    self._on_game_begin(self.total)
+
+# 重连: 86001 + 同 tableID + game_active
+# → 不触发任何状态变化，保持现有走子记录
+
+# 终局: 86006 RECV × 2 或 85075 RECV (body < 200B)
+# → _end_game() 标记所有走子 game_idx，清空 game_active
+```
+
+**Renderer 侧检测**:
+```javascript
+// 新局: [GAME] 开始 → reset + _gameActive = true
+// 重连: [86001] + _gameActive == true → restoreMovesFromSession()
+//       [86001] + _gameActive == false → SKIP (新局不加旧数据)
+// 终局: [GAME] 结束 → reset + _gameActive = false
+```
+
+### 16.2 断连恢复机制
+
+**问题**: 断连后重连，棋盘状态丢失怎么办？
+
+**解决方案 — 会话文件回放**:
+1. Proxy 每 3 秒保存一次走子到 `qqchess_moves_{ts}.json`
+2. 断连时 `websocket_end` 触发 `_save(force=True)` 强制保存
+3. 重连时 86001 到达 → `restoreMovesFromSession()`
+4. 加载最新 `_moves_` 文件 → 过滤到当前局 (no `game_idx`) → 重置棋盘 → 逐步回放
+5. 后续走子直接衔接
+
+**关键设计决策**:
+- 断连**不清除** `_gameActive`，走子记录保留
+- 重连**不回放**已结束对局的走子（`game_idx` 过滤）
+- 新局**不加载**旧数据（`_gameActive` 守卫）
+
+### 16.3 多局累积处理
+
+Proxy 在一次运行中可能经历多局对局:
+```
+Game 0: moves[m1..m10] → _end_game() 标记 game_idx=0
+Game 1: moves[m11..m25] → _end_game() 标记 game_idx=1
+Game 2: moves[m26..m30] → 未结束, 无 game_idx
+```
+
+`_save()` 保存全部 `self.moves`（含所有局）。Renderer 恢复时通过 `!game_idx` 过滤只回放当前局。
+
+### 16.4 数据文件自动清理
+
+```
+触发: 每 30 秒统计刷新 || 每次新文件写入 (5s 防抖)
+阈值: 100MB
+策略: 按文件名排序（即时间排序）→ 从最旧开始删除 → 直到 < 100MB
+文件: 只删除 .json 文件（会话数据），不删其他
+```
+
+---
+
+## 17. 已知问题与未来方向
+
+### 17.1 已实现
 
 - [x] WebSocket 帧格式完全破解
-- [x] JCE 序列化格式完全破解 (完整的解析器)
+- [x] JCE 序列化格式完全破解 (完整的解析器，支持全部类型)
 - [x] TEA-CBC 加密算法完全还原（大端标准 TEA，匹配 JS）
+- [x] TEA-CBC 加密实现 (Aad) — 可用于构造/重放消息
 - [x] 会话密钥派生流程完全还原
-- [x] 走子坐标提取（含评分机制）
+- [x] 走子坐标提取（含评分机制、双路径 SEND/RECV）
 - [x] HAR 文件离线分析
 - [x] 代理会话保存与回放
 - [x] mitmproxy 实时抓包
 - [x] 棋盘状态 FEN 解析与可视化
-- [x] AI 引擎接口框架
+- [x] Canvas 中国象棋棋盘渲染 (含中文记谱)
+- [x] 阵营检测 (3 条路径，优先级递减)
+- [x] 对局边界检测 (新局/终局/重连)
+- [x] 断连恢复机制 (会话文件回放)
+- [x] 多局累积隔离 (game_idx 标记)
+- [x] 皮卡鱼引擎集成 (UCCI 协议)
+- [x] AI 引擎实时分析 + 自动走子
+- [x] 棋盘红方/黑方翻转
+- [x] 中局加入 FEN 同步 (eventID=63)
+- [x] 走子回声过滤
 - [x] Electron 一键启动封装
+- [x] 跨平台打包 (Win/Mac/Linux)
+- [x] 首次启动设置引导 (Python/mitmproxy 检测)
+- [x] 数据目录自定义 + 自动清理 (> 100MB)
+- [x] 日志过滤 (资源日志/QQ象棋日志分离)
 
-### 14.2 已知问题
+### 17.2 已知问题
 
 | 问题 | 严重性 | 说明 |
 |------|--------|------|
-| FEN 检测不可靠 | 中 | 基于正则的扫描在二进制 payload 中命中率低，大多数消息不包含完整 FEN |
-| 走子坐标误报 | 中 | 协议固定字段 (如 iClientVer=0 的 tag=0 type=0 编码) 会干扰坐标扫描 |
-| `tea_decrypt.py` TEA 实现不一致 | 高 | 使用小端 XXTEA 变体，与 JS 客户端的大端标准 TEA 不匹配 |
-| 两套 TEA 实现并存 | 中 | `xq_ws_proxy.py` 和 `tea_decrypt.py` 有独立的 TEA 实现，需统一 |
-| 本地文件加载缺失资源 | 低 | `qqchess_src/index.html` 缺少 Cocos 引擎和部分 JS，无法离线运行 |
+| FEN 检测不可靠 | 中 | 基于正则的扫描在二进制 payload 中命中率低，仅在 MIDGAME (eventID=63) 中可靠提取 |
+| 走子坐标误报 | 中 | 协议固定字段会干扰坐标扫描，评分机制已大幅改善但仍有极低概率误报 |
+| `tea_decrypt.py` TEA 实现不一致 | 高 | 使用小端 XXTEA 变体，与 JS 的大端标准 TEA 不匹配；**当前工作实现已迁移到 xq_ws_proxy.py** |
+| 两套 TEA 实现并存 | 低 | `xq_ws_proxy.py` 和 `tea_decrypt.py` 有独立实现；`tea_decrypt.py` 可视为遗留实验代码 |
 | 无测试框架 | 低 | 纯脚本项目，无 pytest/unittest |
-| Windows 特定路径 | 低 | 部分硬编码路径针对 Windows |
+| 观战模式阵营检测 | 中 | 无 SEND 消息，仅依赖 [CAMP] 和 [MIDGAME] FEN |
+| macOS 打包无签名 | 中 | 交叉编译无法签名，用户需右键打开绕过 Gatekeeper |
+| WebSocket 断开后 proxy 重启 | 低 | 重启后的 proxy 状态丢失，需重新登录才能派生密钥 |
+| 引擎自动走子精度 | 低 | 基于 canvas Pixel 坐标映射，屏幕缩放可能偏移 |
+| GBK 日志解析 | 低 | 中文 Windows 下 mitmdump 可能输出 GBK，已用双重编码处理 |
 
-### 14.3 未来方向
+### 17.3 未来方向
 
 #### 短期
 
-1. **统一 TEA 实现** — 将 `xq_ws_proxy.py` 中的正确 TEA 实现提取为独立模块 `tea_core.py`
-2. **改进走子检测** — 利用 msgID 上下文过滤候选，减少误报
-3. **完善 FEN 提取** — 从解密后的 plaintext 中提取 FEN，而非从二进制扫描
+1. **~~统一 TEA 实现~~** ✅ 已完成 — `xq_ws_proxy.py` 包含完整的大端标准 TEA（加密+解密）
+2. **~~改进走子检测~~** ✅ 已完成 — 已利用 msgID 上下文 + 偏移量评分 + 标记字节检测
+3. **~~完善 FEN 提取~~** ✅ 已完成 — 从 eventID=63 MIDGAME 消息中可靠提取 FEN
 4. **添加 `requirements.txt`** — 列出 `mitmproxy`, `requests` 等依赖
 
 #### 中期
 
-5. **Electron 应用完善**
-   - 添加托盘图标和菜单
-   - 实时显示抓包统计
-   - 走子历史可视化
-   - 内置棋盘显示
-
-6. **AI 引擎深度集成**
-   - 对接皮卡鱼引擎
-   - 实时局面评估
-   - 最佳走法推荐
+5. **~~Electron 应用完善~~** ✅ 大部分已完成
+   - ~~实时显示抓包统计~~ ✅
+   - ~~走子历史可视化~~ ✅ (红黑双列)
+   - ~~内置棋盘显示~~ ✅ (Canvas 渲染)
+   - ~~对接皮卡鱼引擎~~ ✅
+   - ~~实时局面评估~~ ✅
+   - ~~最佳走法推荐~~ ✅ (棋盘琥珀色标记)
    - 棋局分析报告
+   - 托盘图标和菜单
 
-7. **会话管理**
-   - 保存/加载历史会话
+6. **会话管理增强**
+   - ~~保存/加载历史会话~~ ✅ (基础版已实现)
    - 多会话对比分析
    - 棋谱导出 (PGN 格式)
+
+7. **macOS 签名公证** — 在 Mac 上打包 + Apple Developer 账号
 
 #### 长期
 
 8. **移动端代理** — 通过 WiFi 代理 + 手机抓包
 9. **协议模糊测试** — 向服务端发送变异消息
-10. **自动化对局bot** — 解析协议后实现自动走子
+10. **~~自动化对局bot~~** ✅ 基本实现 — 自动走子模式已可用
 11. **完整的 Wireshark dissector** — Lua 插件用于 Wireshark 实时解码
+12. **棋谱库** — 积累对局数据，训练象棋 AI 或分析人类走法模式
 
-### 14.4 贡献注意事项
+### 17.4 贡献注意事项
 
 - 本项目的所有代码均为**教育和研究目的**
 - 请遵守腾讯 QQ 象棋的用户协议
 - 不要将本工具用于破坏游戏公平性或商业盈利
 - 抓包数据文件 (`data/sessions/*.json`) 不应提交到公开仓库
+- 引擎自动走子仅用于测试和演示，实战中请关闭
 
 ---
 
