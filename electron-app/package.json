@@ -5,26 +5,52 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev"
+    "dev": "electron . --dev",
+    "build": "electron-builder --win",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder --win --mac --linux",
+    "build:setup": "electron-builder --win nsis",
+    "build:portable": "electron-builder --win portable",
+    "build:dir": "electron-builder --win dir"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^39.2.3"
+    "electron": "^39.2.3",
+    "electron-builder": "^26.8.1"
   },
   "build": {
     "appId": "com.qqchess.proxy",
     "productName": "QQ象棋协议分析器",
+    "directories": {
+      "output": "dist"
+    },
     "extraResources": [
       { "from": "../engines", "to": "engines" },
       { "from": "../xq_ws_proxy.py", "to": "xq_ws_proxy.py" }
     ],
     "win": {
-      "target": "nsis"
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "mac": {
+      "target": "dmg",
+      "artifactName": "${productName}_${version}_mac.${ext}"
+    },
+    "linux": {
+      "target": "AppImage",
+      "artifactName": "${productName}_${version}_linux.${ext}"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "portable": {
+      "artifactName": "${productName}_${version}_portable.${ext}"
     },
     "files": [
       "main.js",

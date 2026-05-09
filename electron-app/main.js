@@ -30,6 +30,7 @@ let SESSIONS_DIR = (() => {
 })();
 const MAX_LOGS = 500;
 const MAX_DATA_SIZE_MB = 500;
+const CLEANUP_THRESHOLD_MB = 100;
 
 function saveConfig(key, value) {
   try {
@@ -53,6 +54,43 @@ function getDataDirStats() {
     if (fs.existsSync(SESSIONS_DIR)) walk(SESSIONS_DIR);
     return { sizeMB: (totalSize / 1024 / 1024).toFixed(1), fileCount };
   } catch (_) { return { sizeMB: "0.0", fileCount: 0 }; }
+}
+
+function cleanupOldData() {
+  try {
+    if (!fs.existsSync(SESSIONS_DIR)) return { deleted: 0, freedMB: "0.0" };
+
+    const thresholdBytes = CLEANUP_THRESHOLD_MB * 1024 * 1024;
+    const files = fs.readdirSync(SESSIONS_DIR)
+      .filter(f => f.endsWith(".json"))
+      .map(f => ({
+        name: f,
+        path: path.join(SESSIONS_DIR, f),
+        size: fs.statSync(path.join(SESSIONS_DIR, f)).size,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)); // oldest first
+
+    let totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    if (totalSize <= thresholdBytes) return { deleted: 0, freedMB: "0.0" };
+
+    let deleted = 0, freedBytes = 0;
+    for (const f of files) {
+      if (totalSize <= thresholdBytes) break;
+      try {
+        fs.unlinkSync(f.path);
+        totalSize -= f.size;
+        freedBytes += f.size;
+        deleted++;
+      } catch (_) { /* file may be locked by proxy */ }
+    }
+
+    const freedMB = (freedBytes / 1024 / 1024).toFixed(1);
+    addLog(`[main] 数据清理: 删除 ${deleted} 个旧文件, 释放 ${freedMB} MB`);
+    return { deleted, freedMB };
+  } catch (e) {
+    addLog(`[main] 数据清理失败: ${e.message}`);
+    return { deleted: 0, freedMB: "0.0" };
+  }
 }
 
 // Resolve paths for dev (__dirname) vs packaged (process.resourcesPath)
@@ -339,6 +377,21 @@ function getGameWebContents() {
 
 // ── Session file watcher ────────────────────────────────────────────────
 let sessionWatcher = null;
+let _cleanupTimer = null;
+
+function scheduleCleanup() {
+  if (_cleanupTimer) return;
+  _cleanupTimer = setTimeout(() => {
+    _cleanupTimer = null;
+    const result = cleanupOldData();
+    if (result.deleted > 0 && controlWindow && !controlWindow.isDestroyed()) {
+      controlWindow.webContents.send("log-line", {
+        time: new Date().toISOString(),
+        text: `[main] 数据目录超过 ${CLEANUP_THRESHOLD_MB}MB，已自动清理 ${result.deleted} 个旧文件`,
+      });
+    }
+  }, 5000);
+}
 
 function watchSessionFiles() {
   try {
@@ -353,6 +406,7 @@ function watchSessionFiles() {
       if (controlWindow && !controlWindow.isDestroyed()) {
         controlWindow.webContents.send("session-file-changed", filename);
       }
+      scheduleCleanup();
     });
   } catch (e) {
     addLog(`[main] Cannot watch sessions dir: ${e.message}`);
@@ -635,6 +689,8 @@ function setupIPC() {
 
   ipcMain.handle("get-data-dir", () => SESSIONS_DIR);
 
+  ipcMain.handle("cleanup-old-data", () => cleanupOldData());
+
   ipcMain.handle("choose-data-dir", async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     const result = await dialog.showOpenDialog(win, {
@@ -727,6 +783,7 @@ app.on("window-all-closed", () => {
     sessionWatcher.close();
     sessionWatcher = null;
   }
+  if (_cleanupTimer) { clearTimeout(_cleanupTimer); _cleanupTimer = null; }
   app.quit();
 });
 
@@ -737,6 +794,7 @@ app.on("before-quit", () => {
     sessionWatcher.close();
     sessionWatcher = null;
   }
+  if (_cleanupTimer) { clearTimeout(_cleanupTimer); _cleanupTimer = null; }
 });
 
 app.on("activate", () => {

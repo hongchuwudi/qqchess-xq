@@ -399,17 +399,43 @@ function redrawBoard() {
     ctx.fill();
   }
 
-  // Best move: blue dashed
+  // Best move: amber square highlights + solid arrow
   if (_bestFrom && _bestTo) {
+    const sqSize = RR * 2 + 2;
     for (const pt of [_bestFrom, _bestTo]) {
-      ctx.beginPath();
-      ctx.arc(bx(pt.c), by(pt.r), RR + 1, 0, Math.PI * 2);
-      ctx.setLineDash([3, 3]);
-      ctx.strokeStyle = "#1565c0";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.setLineDash([]);
+      const cx = bx(pt.c), cy = by(pt.r);
+      // Filled square
+      ctx.fillStyle = "rgba(255, 152, 0, 0.4)";
+      ctx.fillRect(cx - sqSize / 2, cy - sqSize / 2, sqSize, sqSize);
+      // Solid border
+      ctx.strokeStyle = "#e65100";
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(cx - sqSize / 2, cy - sqSize / 2, sqSize, sqSize);
     }
+    // Arrow
+    const fx = bx(_bestFrom.c), fy = by(_bestFrom.r);
+    const tx = bx(_bestTo.c), ty = by(_bestTo.r);
+    const ang = Math.atan2(ty - fy, tx - fx);
+    const gap = RR + 5;
+    const sx = fx + gap * Math.cos(ang), sy = fy + gap * Math.sin(ang);
+    const ex = tx - gap * Math.cos(ang), ey = ty - gap * Math.sin(ang);
+
+    ctx.beginPath();
+    ctx.moveTo(sx, sy); ctx.lineTo(ex, ey);
+    ctx.strokeStyle = "#e65100";
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    const ah = 12, aw = 7;
+    const hx = ex - ah * Math.cos(ang);
+    const hy = ey - ah * Math.sin(ang);
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(hx - aw * Math.sin(ang), hy + aw * Math.cos(ang));
+    ctx.lineTo(hx + aw * Math.sin(ang), hy - aw * Math.cos(ang));
+    ctx.closePath();
+    ctx.fillStyle = "#e65100";
+    ctx.fill();
   }
 }
 
@@ -424,6 +450,7 @@ let _analysisTimer = null;
 let _lastAnalyzedFen = null;
 let _autoPlay = false;
 let _pendingAutoPlay = false;  // set before analysis, checked when result arrives
+let _gameActive = false;       // true while a game is in progress (between 开始/结束)
 
 // ── Log classification ──────────────────────────────────────────────────
 function classifyLine(text) {
@@ -522,7 +549,20 @@ async function refreshDataStats() {
     const stats = await window.qqchess.getDataStats();
     dom.statDataSize.textContent = stats.sizeMB + " MB";
     dom.statDataLabel.textContent = stats.fileCount + " 文件";
-    if (parseFloat(stats.sizeMB) > 500) {
+    const sizeMB = parseFloat(stats.sizeMB);
+    if (sizeMB > 100) {
+      // Auto cleanup old files
+      const result = await window.qqchess.cleanupOldData();
+      if (result.deleted > 0) {
+        // Refresh stats after cleanup
+        const newStats = await window.qqchess.getDataStats();
+        dom.statDataSize.textContent = newStats.sizeMB + " MB";
+        dom.statDataLabel.textContent = newStats.fileCount + " 文件";
+        dom.statDataCard.style.background = "";
+        return;
+      }
+    }
+    if (sizeMB > 500) {
       dom.statDataCard.style.background = "rgba(255,112,67,0.15)";
       dom.statDataLabel.textContent = stats.fileCount + " 文件 ⚠";
     } else {
@@ -729,6 +769,7 @@ dom.btnClear.addEventListener("click", async () => {
   _userSide = null;
   _autoPlay = false;
   _pendingAutoPlay = false;
+  _gameActive = false;
   dom.btnAutoplay.textContent = "⚡ 自动走子";
   dom.btnAutoplay.classList.remove("btn-accent");
   updateMySide();
@@ -820,7 +861,12 @@ async function restoreMovesFromSession() {
     const data = await window.qqchess.readSessionFile(latest.name);
     if (!data || !Array.isArray(data) || data.length === 0) return;
 
-    // Reset board and replay ALL moves from session file
+    // Only replay moves from the current (un-ended) game — moves from completed
+    // games are tagged with game_idx by the proxy's _end_game().
+    const currentMoves = data.filter((m) => m.game_idx === undefined);
+    if (currentMoves.length === 0) return;
+
+    // Reset board and replay current-game moves from session file
     GameStateTracker.reset();
     parsedMoves = [];
     _userSide = null;
@@ -828,7 +874,7 @@ async function restoreMovesFromSession() {
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
 
     // Determine _userSide from first SEND move's camp BEFORE replaying
-    for (const m of data) {
+    for (const m of currentMoves) {
       if (m.direction === "SEND" && m.camp) {
         _userSide = m.camp === "red" ? "w" : "b";
         updateMySide();
@@ -837,7 +883,7 @@ async function restoreMovesFromSession() {
     }
 
     // Now replay with correct _userSide for proxyToFenUci
-    for (const m of data) {
+    for (const m of currentMoves) {
       const uci = m.uci;
       if (!uci) continue;
       const fenUci = proxyToFenUci(uci);
@@ -953,16 +999,19 @@ window.qqchess.onLogLine((data) => {
     _lastSentUci = null;
     _lastSentTime = 0;
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
+    _gameActive = true;
     refreshMoveList();
     redrawBoard();
     updateEngineUI(null);
     dom.engineFen.textContent = INITIAL_FEN;
   }
 
-  // 86001 arrives — try to restore from saved session immediately
+  // 86001 arrives — only restore on reconnection (same game), not new game
   if (data.text.includes("[86001] tableID=")) {
-    _lastLoadedMovesFile = null;
-    restoreMovesFromSession();
+    if (_gameActive) {
+      _lastLoadedMovesFile = null;
+      restoreMovesFromSession();
+    }
   }
 
   // Clear engine + moves only on genuine game end (not disconnect)
@@ -972,6 +1021,7 @@ window.qqchess.onLogLine((data) => {
     _currentFen = INITIAL_FEN;
     _lastAnalyzedFen = null;
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
+    _gameActive = false;
     refreshMoveList();
     redrawBoard();
     updateEngineUI(null);

@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("qqchess", {
   getDataStats: () => ipcRenderer.invoke("get-data-stats"),
   getDataDir: () => ipcRenderer.invoke("get-data-dir"),
   chooseDataDir: () => ipcRenderer.invoke("choose-data-dir"),
+  cleanupOldData: () => ipcRenderer.invoke("cleanup-old-data"),
   detectPython: () => ipcRenderer.invoke("detect-python"),
 
   // ── Engine (Pikafish) ──
