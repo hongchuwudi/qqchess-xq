@@ -61,9 +61,9 @@ qqchess-xq/
 │   └── sessions/                   # 代理会话输出 (自动生成)
 ├── qqchess_src/                # 下载的游戏客户端源码
 ├── docs/                       # 分析文档
-│   └── 文件分析.md              #   JS 客户端分析记录
-├── CLAUDE.md                   # 项目说明书 (开发用)
-├── RESEARCH.md                 # 完整技术研究报告
+│   ├── 文件分析.md              #   JS 客户端分析记录
+│   └── RESEARCH.md              #   完整技术研究报告
+├── CLAUDE.md                   # 项目说明书 (AI 开发用)
 └── README.md                   # 本文档
 ```
 
@@ -255,7 +255,7 @@ electron-app/dist/
 - **棋盘编码**: 中国象棋 FEN，10行×9列，大写红方/小写黑方
 - **阵营检测**: 中国象棋红方先走，首步 SEND = 执红，首步 RECV = 执黑
 
-详细技术文档请参阅 [RESEARCH.md](./RESEARCH.md)。
+详细技术文档请参阅 [RESEARCH.md](./docs/RESEARCH.md)。
 
 ---
 

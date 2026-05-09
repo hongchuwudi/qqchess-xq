@@ -2,8 +2,10 @@ __pycache__/
 *.pyc
 *.pyo
 data/sessions/
+data/records/
 data/*.har
 node_modules/
 .claude/
 engines/
 qqchess_src/
+.idea/

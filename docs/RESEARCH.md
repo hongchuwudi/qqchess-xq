@@ -838,9 +838,10 @@ qqchess-xq/
 │   └── sessions/                   # 代理会话输出 (qqchess_*.json)
 ├── qqchess_src/             # 下载的游戏客户端源码
 ├── docs/                    # 分析文档
+│   ├── 文件分析.md           #   JS 客户端分析记录
+│   └── RESEARCH.md           #   本文档
 ├── engines/                 # 象棋引擎 (皮卡鱼 pikayu)
-├── CLAUDE.md                # 项目说明书
-└── RESEARCH.md              # 本文档
+└── CLAUDE.md                # 项目说明书 (AI 开发用)
 ```
 
 ### 12.2 xq_ws_proxy.py — mitmproxy 实时抓包插件

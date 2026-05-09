@@ -28,13 +28,29 @@
       "output": "dist"
     },
     "extraResources": [
-      { "from": "../engines", "to": "engines" },
-      { "from": "../xq_ws_proxy.py", "to": "xq_ws_proxy.py" }
+      {
+        "from": "../engines",
+        "to": "engines"
+      },
+      {
+        "from": "../xq_ws_proxy.py",
+        "to": "xq_ws_proxy.py"
+      }
     ],
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
     },
     "mac": {
