@@ -553,10 +553,11 @@ function refreshMoveList() {
     (isRed ? redM : blkM).push({ ...mv, cn });
   }
 
-  // Combined move sequence: raw proxy UCI + FEN UCI after transform
+  // Two-row move sequence: game (proxy raw) vs demo board (FEN after transform)
   const seqEl = document.getElementById("move-sequence");
   if (seqEl) {
-    const parts = ['<div class="seq-row">'];
+    const gameParts = [];
+    const boardParts = [];
     for (let i = 0; i < parsedMoves.length; i++) {
       const mv = parsedMoves[i];
       const rawUci = mv._rawUci || mv.uci || "";
@@ -568,32 +569,15 @@ function refreshMoveList() {
         isRed = /^[A-Z]/.test(fenUci) || /^[砲馬車兵仕相帥]/.test(mv.chinese || "");
       }
       const n = i + 1;
-      const same = rawUci === fenUci;
-      const arrow = same ? "=" : "→";
-      const fenColor = same ? "" : "#ef5350";
-      parts.push(`<span class="move-num">${n}.</span><span class="${isRed ? 'move-red' : 'move-blk'}">${rawUci}${arrow}</span><span style="color:${fenColor}" class="${isRed ? 'move-red' : 'move-blk'}">${same ? '' : fenUci}</span>`);
+      gameParts.push(`<span class="move-num">${n}.</span><span class="${isRed ? 'move-red' : 'move-blk'}">${rawUci}</span>`);
+      boardParts.push(`<span class="move-num">${n}.</span><span class="${isRed ? 'move-red' : 'move-blk'}">${fenUci}</span>`);
     }
-    parts.push('</div>');
-    seqEl.innerHTML = parts.join(" ");
+    seqEl.innerHTML = `<div class="seq-row"><span style="color:#888;font-size:10px">游戏:</span> ${gameParts.join(" ")}</div><div class="seq-row"><span style="color:#888;font-size:10px">棋盘:</span> ${boardParts.join(" ")}</div>`;
   }
 
-  // Engine best move sequence — aligned by move number
+  // Hide engine sequence (engine data is shown in engine panel)
   const engEl = document.getElementById("engine-sequence");
-  if (engEl) {
-    const maxN = Math.max(parsedMoves.length, _engineMoves.length > 0 ? _engineMoves[_engineMoves.length - 1].moveNum : 0);
-    const parts = ['<div class="seq-row">'];
-    for (let n = 1; n <= maxN; n++) {
-      const em = _engineMoves.find(e => e.moveNum === n);
-      if (em) {
-        const sign = (em.score || 0) >= 0 ? "+" : "";
-        parts.push(`<span class="move-num">${n}.</span><span style="color:#ffcc80">${em.uci}</span><span style="color:#888;font-size:9px">${sign}${em.score}</span>`);
-      } else {
-        parts.push(`<span class="move-num">${n}.</span><span style="color:#555">-</span>`);
-      }
-    }
-    parts.push('</div>');
-    engEl.innerHTML = parts.join(" ");
-  }
+  if (engEl) engEl.innerHTML = "";
 
   dom.moveListRed.innerHTML = redM.map((mv, i) =>
     `<div class="move-col-item${mv.sent ? ' mine' : ' opp'}"><span class="mv-num">${i + 1}.</span>${mv.cn}</div>`
