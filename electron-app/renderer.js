@@ -221,8 +221,8 @@ GameStateTracker.reset();
 
 // ── Board drawing ───────────────────────────────────────────────────────
 const BOARD_COLS = "abcdefghi";
-const BOARD_W = 300, BOARD_H = 330;
-const ML = 24, MR = 12, MT = 12, MB = 12; // margins
+const BOARD_W = 340, BOARD_H = 360;
+const ML = 24, MR = 52, MT = 12, MB = 42; // margins
 const BW = BOARD_W - ML - MR; // 264
 const BH = BOARD_H - MT - MB; // 306
 const DX = BW / 8;  // ~33px between vertical lines
@@ -240,6 +240,8 @@ let _lastSentUci = null; // UCI of last SENT move, for echo filtering
 let _lastFrom = null, _lastTo = null;
 let _bestFrom = null, _bestTo = null;
 
+// Proxy uses player-relative coords (row 5-9 = player pieces).
+// Red user: proxy == FEN (red bottom). Black user: need 9-row flip.
 // Proxy uses player-relative coords (row 5-9 = player pieces).
 // Red user: proxy == FEN (red bottom). Black user: need 9-row flip.
 function proxyToFenUci(uci) {
@@ -270,8 +272,7 @@ function setBestMove(uci) {
   }
 }
 
-// Coordinate helpers — FEN col 0=a is always player's right side
-function bx(c) { return ML + (8 - c) * DX; }
+function bx(c) { return _userSide === "b" ? ML + (8 - c) * DX : ML + c * DX; }
 function by(r) { return _userSide === "b" ? MT + (9 - r) * DY : MT + r * DY; }
 
 function redrawBoard() {
@@ -329,6 +330,23 @@ function redrawBoard() {
     const botLabel = _userSide === "b" ? blackLabels[i] : redLabels[i];
     ctx.fillText(topLabel, bx(i), by(0) - 5);
     ctx.fillText(botLabel, bx(i), by(9) + 14);
+  }
+
+  // FEN coordinate labels (a-i columns at bottom, 0-9 rows on right)
+  ctx.font = "bold 13px monospace";
+  ctx.fillStyle = "#e53935";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const FEN_COLS = "abcdefghi";
+  const labelY = BOARD_H - 14;
+  for (let i = 0; i < 9; i++) {
+    ctx.fillText(FEN_COLS[i], bx(i), labelY);
+  }
+  ctx.textBaseline = "middle";
+  const labelX = BOARD_W - 18;
+  for (let i = 0; i < 10; i++) {
+    ctx.textAlign = "right";
+    ctx.fillText(String(i), labelX, by(i));
   }
 
   // Pieces
@@ -451,6 +469,7 @@ let _lastAnalyzedFen = null;
 let _autoPlay = false;
 let _pendingAutoPlay = false;  // set before analysis, checked when result arrives
 let _gameActive = false;       // true while a game is in progress (between 开始/结束)
+let _engineMoves = [];         // track engine best moves for comparison
 
 // ── Log classification ──────────────────────────────────────────────────
 function classifyLine(text) {
@@ -532,6 +551,48 @@ function refreshMoveList() {
       isRed = /^[砲馬車兵仕相帥]/.test(cn);
     }
     (isRed ? redM : blkM).push({ ...mv, cn });
+  }
+
+  // Combined move sequence: raw proxy UCI + FEN UCI after transform
+  const seqEl = document.getElementById("move-sequence");
+  if (seqEl) {
+    const parts = ['<div class="seq-row">'];
+    for (let i = 0; i < parsedMoves.length; i++) {
+      const mv = parsedMoves[i];
+      const rawUci = mv._rawUci || mv.uci || "";
+      const fenUci = mv.uci || "";
+      let isRed;
+      if (_userSide && mv.sent !== undefined) {
+        isRed = mv.sent ? (_userSide === "w") : (_userSide === "b");
+      } else {
+        isRed = /^[A-Z]/.test(fenUci) || /^[砲馬車兵仕相帥]/.test(mv.chinese || "");
+      }
+      const n = i + 1;
+      const same = rawUci === fenUci;
+      const arrow = same ? "=" : "→";
+      const fenColor = same ? "" : "#ef5350";
+      parts.push(`<span class="move-num">${n}.</span><span class="${isRed ? 'move-red' : 'move-blk'}">${rawUci}${arrow}</span><span style="color:${fenColor}" class="${isRed ? 'move-red' : 'move-blk'}">${same ? '' : fenUci}</span>`);
+    }
+    parts.push('</div>');
+    seqEl.innerHTML = parts.join(" ");
+  }
+
+  // Engine best move sequence — aligned by move number
+  const engEl = document.getElementById("engine-sequence");
+  if (engEl) {
+    const maxN = Math.max(parsedMoves.length, _engineMoves.length > 0 ? _engineMoves[_engineMoves.length - 1].moveNum : 0);
+    const parts = ['<div class="seq-row">'];
+    for (let n = 1; n <= maxN; n++) {
+      const em = _engineMoves.find(e => e.moveNum === n);
+      if (em) {
+        const sign = (em.score || 0) >= 0 ? "+" : "";
+        parts.push(`<span class="move-num">${n}.</span><span style="color:#ffcc80">${em.uci}</span><span style="color:#888;font-size:9px">${sign}${em.score}</span>`);
+      } else {
+        parts.push(`<span class="move-num">${n}.</span><span style="color:#555">-</span>`);
+      }
+    }
+    parts.push('</div>');
+    engEl.innerHTML = parts.join(" ");
   }
 
   dom.moveListRed.innerHTML = redM.map((mv, i) =>
@@ -616,6 +677,17 @@ function updateEngineUI(result) {
   // Convert engine UCI best move to Chinese notation
   const cn = GameStateTracker.uciToChinese(result.bestMove);
   dom.engineBestmoveCn.textContent = cn ? `（${cn}）` : "";
+
+  // Record engine best move (suggestion for the NEXT move to be played)
+  if (result.bestMove && result.bestMove !== "0000") {
+    // After N moves, engine suggests move #N+1
+    const nextMoveNum = parsedMoves.length + 1;
+    // Avoid duplicate entries for the same move number
+    if (!_engineMoves.find(e => e.moveNum === nextMoveNum)) {
+      _engineMoves.push({ moveNum: nextMoveNum, uci: result.bestMove, score: result.score });
+    }
+    refreshMoveList();
+  }
 
   // Auto-play: if engine analyzed after opponent's move, fire the best move
   if (_pendingAutoPlay && result.bestMove && result.bestMove !== "0000") {
@@ -767,6 +839,7 @@ dom.btnClear.addEventListener("click", async () => {
   _lastAnalyzedFen = null;
   _lastFrom = _lastTo = _bestFrom = _bestTo = null;
   _userSide = null;
+  _restoreVersion++;
   _autoPlay = false;
   _pendingAutoPlay = false;
   _gameActive = false;
@@ -847,8 +920,10 @@ dom.btnSetupRetry.addEventListener("click", runSetupDetection);
 
 // ── Session file count + move restore ───────────────────────────────────
 let _lastLoadedMovesFile = null;
+let _restoreVersion = 0;
 
 async function restoreMovesFromSession() {
+  const version = _restoreVersion;
   try {
     const files = await window.qqchess.getSessionFiles();
     const movesFiles = files.filter((f) => f.name.includes("_moves_")).sort((a, b) => b.name.localeCompare(a.name));
@@ -860,6 +935,7 @@ async function restoreMovesFromSession() {
 
     const data = await window.qqchess.readSessionFile(latest.name);
     if (!data || !Array.isArray(data) || data.length === 0) return;
+    if (version !== _restoreVersion) { console.log('[restore] stale, discard'); return; }
 
     // Only replay moves from the current (un-ended) game — moves from completed
     // games are tagged with game_idx by the proxy's _end_game().
@@ -886,14 +962,15 @@ async function restoreMovesFromSession() {
     for (const m of currentMoves) {
       const uci = m.uci;
       if (!uci) continue;
-      const fenUci = proxyToFenUci(uci);
       const sent = m.direction === "SEND";
+      const fenUci = proxyToFenUci(uci);
       const result = GameStateTracker.applyMove(fenUci, sent);
       if (result) {
-        parsedMoves.push({ num: m.num, uci: fenUci, sent, chinese: result.chinese });
+        parsedMoves.push({ num: m.num, uci: fenUci, _rawUci: uci, sent, chinese: result.chinese });
         setLastMove(fenUci);
       }
     }
+    if (version !== _restoreVersion) { console.log('[restore] stale after replay, discard'); return; }
     _currentFen = GameStateTracker.fen;
     refreshMoveList();
     redrawBoard();
@@ -964,6 +1041,7 @@ window.qqchess.onLogLine((data) => {
         _lastSentUci = mv.uci;
         _lastSentTime = Date.now();
       }
+      mv._rawUci = mv.uci; // save raw proxy UCI for comparison
       const fenUci = proxyToFenUci(mv.uci);
       let result = GameStateTracker.applyMove(fenUci, mv.sent);
       // Mid-game without FEN: first move may fail color check on stale board — retry
@@ -979,19 +1057,21 @@ window.qqchess.onLogLine((data) => {
       mv.chinese = result.chinese;
       mv.uci = fenUci;
       parsedMoves.push(mv);
+      _restoreVersion++;
       _currentFen = result.fen;
       setLastMove(mv.uci);
       _bestFrom = _bestTo = null;
       redrawBoard();
       refreshMoveList();
       // Auto-analyze after every move (both user and opponent)
-      if (parsedMoves.length >= 2) scheduleAnalysis(result.fen, !mv.sent);
+      scheduleAnalysis(result.fen, !mv.sent);
     }
   }
 
   // New game detected — reset game state
   if (data.text.includes("[GAME] ====== 对局") && data.text.includes("开始")) {
     parsedMoves = [];
+    _engineMoves = [];
     GameStateTracker.reset();
     _currentFen = INITIAL_FEN;
     _lastAnalyzedFen = null;
@@ -1000,10 +1080,12 @@ window.qqchess.onLogLine((data) => {
     _lastSentTime = 0;
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
     _gameActive = true;
+    _restoreVersion++;
     refreshMoveList();
     redrawBoard();
     updateEngineUI(null);
     dom.engineFen.textContent = INITIAL_FEN;
+    scheduleAnalysis(INITIAL_FEN); // initial position analysis for move #1
   }
 
   // 86001 arrives — only restore on reconnection (same game), not new game
@@ -1017,11 +1099,13 @@ window.qqchess.onLogLine((data) => {
   // Clear engine + moves only on genuine game end (not disconnect)
   if (data.text.includes("[GAME] ====== 对局") && data.text.includes("结束")) {
     parsedMoves = [];
+    _engineMoves = [];
     GameStateTracker.reset();
     _currentFen = INITIAL_FEN;
     _lastAnalyzedFen = null;
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
     _gameActive = false;
+    _restoreVersion++;
     refreshMoveList();
     redrawBoard();
     updateEngineUI(null);
@@ -1126,6 +1210,7 @@ async function init() {
         if (entry.text.includes(">>> [MOVE") || entry.text.includes(">>> [MOVE SENT")) {
           const mv = parseMove(entry.text);
           if (mv && !parsedMoves.find((m) => m.num === mv.num)) {
+            mv._rawUci = mv.uci;
             const fenUci = proxyToFenUci(mv.uci);
             let result = GameStateTracker.applyMove(fenUci, mv.sent);
             // Mid-game without FEN: first move may fail color check on stale board — retry
@@ -1154,7 +1239,6 @@ async function init() {
   } catch (e) { /* ignore */ }
 
   refreshSessionCount();
-  if (parsedMoves.length === 0) await restoreMovesFromSession();
 
   refreshDataDir();
   refreshDataStats();

@@ -419,6 +419,21 @@ body {
 .move-col-item.mine { color: #ffcc80; }
 .move-col-item.opp  { color: #81d4fa; }
 
+/* ── Combined move sequence ────────────────────────────────────────── */
+.move-sequence, .engine-sequence {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 4px 6px;
+  line-height: 1.6;
+  word-break: break-all;
+  min-height: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.move-sequence .move-red  { color: #ef9a9a; }
+.move-sequence .move-blk  { color: #81d4fa; }
+.move-sequence .move-num  { color: var(--text-dim); font-size: 10px; margin-right: 2px; }
+.engine-sequence { color: #888; font-size: 10px; }
+
 /* ── Scrollbar ────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

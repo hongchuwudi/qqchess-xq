@@ -1053,9 +1053,12 @@ class QQChessWSProxy:
             self._consecutive_86006 += 1
             if self._consecutive_86006 >= 2 and self.move_n > 0:
                 ctx.log.info(f"  [END] 检测到连续 86006 事件 (对局结算)")
+                self._end_game('86006_settle')
+                return True
 
         if msg_id == 85075 and direction == 'RECV' and not encrypted and body_size < 200:
-            self._end_game('85075_end_notify')
+            if self._game_active:
+                self._end_game('85075_end_notify')
             return True
 
         if msg_id not in (86005, 86006, 86004):
