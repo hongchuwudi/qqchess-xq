@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld("qqchess", {
 
   // ── Auto-play ──
   autoPlayMove: (uci) => ipcRenderer.invoke("autoplay-move", uci),
+  addLog: (msg) => ipcRenderer.invoke("add-log", msg),
 
   // ── Event listeners (main → renderer push) ──
   onLogLine: (callback) => {

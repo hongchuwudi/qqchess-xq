@@ -533,6 +533,10 @@ function setupIPC() {
     };
   });
 
+  ipcMain.handle("add-log", async (_event, msg) => {
+    addLog("[renderer] " + msg);
+  });
+
   ipcMain.handle("autoplay-move", async (_event, uci) => {
     if (!uci || uci.length < 4) {
       addLog("[autoplay] Invalid UCI: " + uci);

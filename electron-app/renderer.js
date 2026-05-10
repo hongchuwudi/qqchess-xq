@@ -720,14 +720,14 @@ function updateEngineUI(result) {
     _pendingAutoPlay = false;
     const rawUci = fenToRawUci(result.bestMove, _userSide, true);
     const delay = 1000 + Math.random() * 1500;
-    console.log(`[autoplay] FEN=${result.bestMove} → raw=${rawUci}  fmt=${_format}  side=${_userSide}  delay=${(delay/1000).toFixed(1)}s`);
+    window.qqchess.addLog(`[autoplay] FEN=${result.bestMove} → raw=${rawUci}  fmt=${_format}  side=${_userSide}  delay=${(delay/1000).toFixed(1)}s`);
     setTimeout(() => {
-      console.log(`[autoplay] firing: ${rawUci}`);
+      window.qqchess.addLog(`[autoplay] firing: ${rawUci}`);
       window.qqchess.autoPlayMove(rawUci);
     }, delay);
   } else if (_pendingAutoPlay) {
     _pendingAutoPlay = false;
-    console.log(`[autoplay] SKIP: bestMove=${result.bestMove}  score=${result.score}`);
+    window.qqchess.addLog(`[autoplay] SKIP: bestMove=${result.bestMove} score=${result.score}`);
   }
 
   const score = result.score || 0;
@@ -789,6 +789,7 @@ function scheduleAnalysis(fen, isOpponentMove) {
   // If auto-play is on and opponent just moved, flag for auto-fire after analysis
   if (isOpponentMove && _autoPlay) {
     _pendingAutoPlay = true;
+    window.qqchess.addLog(`[autoplay] scheduled: waiting for engine...  side=${_userSide}  fmt=${_format}`);
   }
   // Debounce: 100ms to avoid duplicate triggers, then start analysis
   if (_analysisTimer) clearTimeout(_analysisTimer);
@@ -857,6 +858,7 @@ dom.btnAutoplay.addEventListener("click", () => {
   _pendingAutoPlay = false;
   dom.btnAutoplay.textContent = _autoPlay ? "⏸ 停止自动" : "⚡ 自动走子";
   dom.btnAutoplay.classList.toggle("btn-accent", _autoPlay);
+  window.qqchess.addLog(`[autoplay] ${_autoPlay ? 'ON' : 'OFF'}  fmt=${_format}  side=${_userSide}`);
 });
 
 dom.btnFlip.addEventListener("click", () => {
