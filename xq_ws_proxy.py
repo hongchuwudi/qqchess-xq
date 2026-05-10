@@ -398,6 +398,12 @@ class QQChessWSProxy:
             except Exception as e:
                 ctx.log.info(f"[INJECT] flow.websocket.inject_message: {e}")
         if not ok:
+            # Dump available methods on server_conn for debugging
+            try:
+                conn_methods = [m for m in dir(flow.server_conn) if not m.startswith('_')]
+                ctx.log.info(f"[INJECT] server_conn methods: {conn_methods}")
+            except: pass
+        if not ok:
             # Fallback: write raw WebSocket frame to TCP writer
             try:
                 import struct as _struct
