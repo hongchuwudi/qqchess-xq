@@ -60,7 +60,7 @@ class QQChessWSProxy:
         self._format = None       # 'A' or 'B', locked on first move per game
         self._last_sent_uci = None  # raw UCI of last SEND, for echo filtering
         self._inject_template = None   # raw WS frame of last SEND (auto-play template)
-        self._inject_old_coords = None # 4B 1-indexed coords in template
+        self._inject_coord_pos = -1    # byte offset of coord bytes in template
         self._inject_flow = None       # current flow (for timer-based injection)
         self._inject_timer = None      # periodic injection check timer
 
@@ -241,10 +241,16 @@ class QQChessWSProxy:
                         if direction == 'SEND' and msg_id == 86004:
                             self._last_sent_uci = best['uci']
                             self._inject_template = raw
-                            self._inject_old_coords = bytes([
+                            coord_bytes = bytes([
                                 best['from'][0] + 1, best['from'][1] + 1,
                                 best['to'][0] + 1, best['to'][1] + 1,
                             ])
+                            # Find the LAST occurrence (coords are near end of payload)
+                            pos = raw.rfind(coord_bytes)
+                            if pos >= 0:
+                                self._inject_coord_pos = pos
+                            else:
+                                ctx.log.warn(f"[INJECT] template save: coords {coord_bytes.hex()} not found in raw!")
 
                         if not is_echo:
                             self.move_n += 1
@@ -339,15 +345,15 @@ class QQChessWSProxy:
             return
         new_coords = bytes([fc, fr, tc, tr])
 
-        # Replace LAST occurrence (coords are near end of template; first occurrence
-        # might be a false positive in JCE headers or other fields)
-        idx = self._inject_template.rfind(self._inject_old_coords)
-        if idx < 0:
-            ctx.log.warn(f"[INJECT] coords {self._inject_old_coords.hex()} not found in template")
+        # Replace coords at saved byte position
+        idx = self._inject_coord_pos
+        if idx < 0 or idx + 4 > len(self._inject_template):
+            ctx.log.warn(f"[INJECT] bad coord_pos={idx}")
             return
-        modified = self._inject_template[:idx] + new_coords + self._inject_template[idx + 4:]
+        modified = (self._inject_template[:idx] + new_coords +
+                     self._inject_template[idx + 4:])
 
-        ctx.log.info(f"[INJECT] {uci}  {self._inject_old_coords.hex()}→{new_coords.hex()}")
+        ctx.log.info(f"[INJECT] {uci}  pos={idx}  {self._inject_template[idx:idx+4].hex()}→{new_coords.hex()}")
         try:
             flow.inject_message(flow.server_conn, modified)
             ctx.log.info(f"[INJECT] OK")
