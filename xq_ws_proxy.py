@@ -330,9 +330,7 @@ class QQChessWSProxy:
         if idx < 0:
             ctx.log.warn(f"[INJECT] coords {self._inject_old_coords.hex()} not found in template")
             return
-        modified = (self._inject_template[:idx] + new_coords +
-                     self._inject_template[idx + 4:])
-            return
+        modified = self._inject_template[:idx] + new_coords + self._inject_template[idx + 4:]
 
         ctx.log.info(f"[INJECT] {uci}  {self._inject_old_coords.hex()}→{new_coords.hex()}")
         try:
