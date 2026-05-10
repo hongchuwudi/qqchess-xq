@@ -257,11 +257,17 @@ def tea_aad_encrypt(plaintext, key):
     return bytes(out)
 
 
-def derive_session_key(ssec_hex, uin):
+def derive_session_key(ssec_hex, uin, openid=None):
     """派生会话密钥 — 对应 JS 85001 handler:
     key = pad16(str(uin)), sSecKey_bytes = K4a(sSecKey) → zJb 解密
+
+    WeChat 用户 uin=0, 此时用 openid 替代 uin 做密钥派生。
+    JS: pa=""+pa; for(...)na[va]=255&pa.charCodeAt(va)
     """
-    tk = str(uin).encode('latin-1').ljust(16, b'\x00')
+    identity = str(uin) if uin else (openid or '')
+    if not identity:
+        return None
+    tk = identity.encode('latin-1').ljust(16, b'\x00')[:16]
     ssec_bytes = bytes.fromhex(ssec_hex)
     sk = tea_zjb_decrypt(ssec_bytes, tk)
     if sk:

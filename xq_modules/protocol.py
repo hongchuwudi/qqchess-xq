@@ -58,63 +58,88 @@ def _parse_tmsg(j):
     return {'head': head, 'body': body}
 
 
+def _try_read_ssec(j, tag):
+    """Read sSecKey from a given field tag, return hex string or ''."""
+    ssec = j.read_string(tag)
+    if not ssec:
+        return ''
+    try:
+        raw_val = ssec.encode('latin-1')
+    except Exception:
+        raw_val = b''
+    if len(raw_val) >= 16:
+        return raw_val.hex()
+    return ''
+
+
+def _scan_ssec_in_body(body, target_fields=(10, 11)):
+    """Brute-force scan for sSecKey at target fields. Returns hex string or ''."""
+    best = ''
+    for i in range(len(body) - 2):
+        b = body[i]
+        field_id = b >> 4
+        jce_type = b & 0xf
+        if field_id == 15:
+            if i + 1 >= len(body):
+                continue
+            field_id = body[i + 1]
+        if field_id not in target_fields or jce_type not in (6, 7):
+            continue
+        try:
+            offset = i + 1 + (1 if (b >> 4) == 15 else 0)
+            if jce_type == 6:
+                slen = body[offset]
+                if offset + 1 + slen > len(body): continue
+                val = body[offset + 1:offset + 1 + slen]
+            else:
+                slen = struct.unpack('>I', body[offset:offset + 4])[0]
+                if slen < 16 or slen > 1000 or offset + 4 + slen > len(body): continue
+                val = body[offset + 4:offset + 4 + slen]
+            if slen >= 16:
+                try:
+                    text = val.decode('ascii')
+                    if all(c in '0123456789abcdefABCDEF' for c in text):
+                        best = text
+                    else:
+                        best = val.hex()
+                except Exception:
+                    best = val.hex()
+        except Exception:
+            continue
+    return best
+
+
 def parse_login(body):
     """
-    TResponseLogin (QQChessZoneProto):
-      0: iResultID, 1: uUin, ..., 4: tPlayerInfo, ...
-      10: sSecKey, 11: banEndTime, 12: bShowButton, ...
+    TResponseLogin — supports both QQ and WeChat variants.
+
+    QQChessZoneProto:     sSecKey at field 10, uUin at field 1
+    WX/alternate variant: sSecKey at field 11, sWXGameSessionKey at field 15
+
+    For WeChat login (iOpenPlatType=1), uUin may be 0 — in that case
+    sOpenID from the TPackage level is used for key derivation instead.
     """
     j = JceIn(body)
     uin = j.read_uint32(1)
-    ssec = j.read_string(10)
-    if ssec:
-        try:
-            raw_val = ssec.encode('latin-1')
-        except Exception:
-            raw_val = b''
-        if len(raw_val) >= 16:
-            ssec = raw_val.hex()
-        else:
-            ssec = ''
-    # Fallback: scan for field=10 STR1/STR4 after skipping tPlayerInfo
-    # The struct at field 4 may contain its own field 10, so we take
-    # the LAST occurrence (which is the top-level TResponseLogin field 10)
+
+    # Try field 10 first (common), then field 11 (alternate variant)
+    ssec = _try_read_ssec(j, 10) or _try_read_ssec(j, 11)
+
+    # Also try field 15 (sWXGameSessionKey) as last resort
+    wx_key = _try_read_ssec(j, 15)
+
+    # Brute-force fallback: scan for both field 10 and 11
     if not ssec:
-        last_val = None
-        for i in range(len(body) - 2):
-            b = body[i]
-            field_id = b >> 4
-            jce_type = b & 0xf
-            if field_id == 15:
-                if i + 1 >= len(body):
-                    continue
-                field_id = body[i + 1]
-            if field_id != 10 or jce_type not in (6, 7):
-                continue
-            try:
-                offset = i + 1 + (1 if (b >> 4) == 15 else 0)
-                if jce_type == 6:
-                    slen = body[offset]
-                    if offset + 1 + slen > len(body): continue
-                    val = body[offset + 1:offset + 1 + slen]
-                else:
-                    slen = struct.unpack('>I', body[offset:offset + 4])[0]
-                    if slen < 16 or slen > 1000 or offset + 4 + slen > len(body): continue
-                    val = body[offset + 4:offset + 4 + slen]
-                if slen >= 16:
-                    try:
-                        text = val.decode('ascii')
-                        if all(c in '0123456789abcdefABCDEF' for c in text):
-                            last_val = text
-                        else:
-                            last_val = val.hex()
-                    except Exception:
-                        last_val = val.hex()
-            except Exception:
-                continue
-        if last_val:
-            ssec = last_val
-    return {'iResultID': j.read_int32(0), 'uUin': uin, 'sSecKey': ssec}
+        ssec = _scan_ssec_in_body(body, (10, 11))
+    if not wx_key:
+        wx_key = _scan_ssec_in_body(body, (15,))
+
+    return {
+        'iResultID': j.read_int32(0),
+        'uUin': uin,
+        'sSecKey': ssec,
+        'sWXGameSessionKey': wx_key,
+    }
 
 
 def parse_game_event(body):

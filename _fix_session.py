@@ -80,25 +80,28 @@ def main():
                 print(f"  Login response:")
                 print(f"    iResultID   = {login.get('iResultID')}")
                 print(f"    uUin        = {login.get('uUin')}")
-                ssec = login.get('sSecKey', '')
+                ssec = login.get('sSecKey') or login.get('sWXGameSessionKey', '')
                 print(f"    sSecKey     = {ssec[:60] + '...' if len(ssec) > 60 else ssec}")
-                if ssec and login.get('uUin'):
+                if ssec:
                     login_info = login
+                    login_info['sOpenID'] = pkg.get('sOpenID', '')
             break
         break
 
-    if not login_info or not login_info.get('sSecKey'):
+    if not login_info or not (login_info.get('sSecKey') or login_info.get('sWXGameSessionKey')):
         print("\n[!] Could not extract sSecKey — login body may be encrypted or malformed")
         sys.exit(1)
 
-    uin = login_info['uUin']
-    ssec = login_info['sSecKey']
+    uin = login_info.get('uUin', 0)
+    ssec = login_info.get('sSecKey') or login_info.get('sWXGameSessionKey', '')
+    openid = login_info.get('sOpenID', '')
 
-    session_key = derive_session_key(ssec, uin)
-    print(f"\nsession_key  = {session_key.hex()}")
+    session_key = derive_session_key(ssec, uin, openid)
+    print(f"\nsession_key  = {session_key.hex() if session_key else 'FAILED'}")
 
     # Update summary
-    summary['session_key'] = session_key.hex()
+    if session_key:
+        summary['session_key'] = session_key.hex()
     summary['uin'] = uin
     with open(summary_path, 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)

@@ -118,14 +118,23 @@ class QQChessWSProxy:
         if msg_id == 85001 and not m.from_client:
             try:
                 login = parse_login(body)
+                ssec = login['sSecKey'] or login['sWXGameSessionKey']
+                uin = login['uUin']
+                openid = pkg.get('sOpenID', '')
+                iOpenPlatType = pkg.get('iOpenPlatType', 0)
+                plat_label = {0: '?', 1: 'WX', 2: 'QQ', 3: 'PC'}.get(iOpenPlatType, str(iOpenPlatType))
                 ctx.log.info(
-                    f"  [LOGIN] uUin={login['uUin']}  "
-                    f"sSecKey={login['sSecKey'][:32] if login['sSecKey'] else '(none)'}..."
+                    f"  [LOGIN] plat={plat_label} uUin={uin}  "
+                    f"openid={openid[:16] if openid else '-'}...  "
+                    f"sSecKey={'ok' if ssec else 'MISSING'}"
                 )
-                if login['sSecKey'] and login['uUin']:
-                    self.session_key = derive_session_key(login['sSecKey'], login['uUin'])
-                    self.uin = login['uUin']
-                    ctx.log.info(f"  [KEY] session_key={self.session_key.hex()}")
+                if ssec:
+                    self.session_key = derive_session_key(ssec, uin, openid)
+                    self.uin = uin if uin else openid
+                    if self.session_key:
+                        ctx.log.info(f"  [KEY] session_key={self.session_key.hex()}")
+                    else:
+                        ctx.log.warn(f"  [KEY] 派生失败 (ssec={ssec[:16]}... uin={uin} openid={openid[:16] if openid else '-'}...)")
             except Exception as e:
                 ctx.log.error(f"  [LOGIN] 解析失败: {e}")
 
