@@ -45,6 +45,48 @@ Dependencies (no `requirements.txt`): `mitmproxy`, `requests`. Install manually.
 5. **Session key derivation**: Login response 85001 delivers `sSecKey` + `uUin`. Derive: `sessionKey = TEA_decrypt(hexToBytes(sSecKey), pad16(str(uUin)))`
 6. **Board state**: Chinese Chess FEN (10 rows × 9 cols, uppercase=red, lowercase=black)
 
+### Coordinate systems & conversion
+
+Three coordinate spaces exist, and every move must be converted correctly between them:
+
+| System | Rows | Columns | Description |
+|--------|------|---------|-------------|
+| **Raw bytes** (protocol) | 1-indexed, 1–10 | 1-indexed, 1–9 (left→right: a=1..i=9) | Server's binary encoding in vecMsgBody |
+| **Raw UCI** (0-indexed) | 0-indexed, 0–9 | a–i (left→right) | `_raw_move()` output — server's original intent, no interpretation |
+| **FEN** (target) | 0–9, Red 5–9 bottom, Black 0–4 top | a=left, i=right | Canonical board coordinate; used by Pikafish engine and demo board rendering |
+
+**Conversion chain**: Raw bytes → `_raw_move()` → Raw UCI → `game_to_fen()` / `rawToFenUci()` → FEN
+
+#### Why conversion is non-trivial
+
+The game protocol encodes moves from the **mover's perspective** (mover's own pieces at rows 0–4), using Chinese chess column numbering (right-to-left: 九→一). But `_raw_move()` maps columns left-to-right (a=1, b=2, ..., i=9). This creates a column mismatch: a Chinese column 八(h) may be encoded as raw byte 2 (b).
+
+Additionally, the server sometimes pre-flips rows (Red at 5–9, matching FEN) while leaving columns in raw encoding. The result: a given move can arrive in one of two sub-formats, distinguishable only by `from_row`:
+
+#### The four cases (determined by mover camp + from_row)
+
+| # | Mover | from_row | Meaning | Operation | Example |
+|---|-------|----------|---------|-----------|---------|
+| 1 | Red | ≤4 | Red's perspective (Red at 0–4) | **Flip rows** | h0g2 → h9g7 |
+| 2 | Red | >4 | Rows already FEN, columns raw | **Mirror columns** | b9c7 → h9g7 |
+| 3 | Black | ≤4 | Black's perspective, columns raw | **Mirror columns** | h0g2 → b0c2 |
+| 4 | Black | >4 | Red's perspective (Black at 5–9) | **Flip rows** | g6g5 → g3g4 |
+
+- **Flip rows**: `fr = 9 - fr`, `tr = 9 - tr` (columns unchanged)
+- **Mirror columns**: `fc = 8 - fc`, `tc = 8 - tc` (rows unchanged)
+
+#### Implementation locations
+
+- **`xq_ws_proxy.py`**: `game_to_fen(uci, mover_camp)` — converts Raw UCI → FEN for session JSON (`board_uci` field). Also handles echo filtering (`[ECHO]` skip) to prevent duplicate move records.
+- **`electron-app/renderer.js`**: `rawToFenUci(uci, userSide, isSent)` — same logic in JS, converts Raw UCI from `>>> [MOVE` log lines to FEN before applying to the board.
+- **`electron-app/renderer.js`**: `bx(c)`, `by(r)` — map FEN coordinates to canvas pixels. For Black user, applies 180° rotation (`8-c` for columns, `9-r` for rows) so Black pieces appear at bottom.
+
+#### Key pitfalls discovered
+
+1. **Echo doubling**: RECV messages that echo the user's own SEND must be filtered BEFORE conversion, because `mover_camp` differs (SEND=mover=self, RECV appears as opponent). The proxy's `[ECHO]` filter compares raw UCI before any conversion.
+2. **Column mirror vs row flip**: Not all Red-mover moves need row flip, and not all Black-mover moves are already FEN. The `from_row` is the only reliable signal — it tells you whether rows are already in FEN format.
+3. **Dual conversion danger**: Never chain two conversions. The `>>> [MOVE]` log line always carries Raw UCI (server's original). Only the renderer's `rawToFenUci()` converts it to FEN for board application. The `_rawUci` field preserves the raw value for the "游戏" display line.
+
 ### Core modules
 
 | File | Role |

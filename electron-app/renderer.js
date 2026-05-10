@@ -240,16 +240,32 @@ let _lastSentUci = null; // UCI of last SENT move, for echo filtering
 let _lastFrom = null, _lastTo = null;
 let _bestFrom = null, _bestTo = null;
 
-// Proxy uses player-relative coords (row 5-9 = player pieces).
-// Red user: proxy == FEN (red bottom). Black user: need 9-row flip.
-// Proxy uses player-relative coords (row 5-9 = player pieces).
-// Red user: proxy == FEN (red bottom). Black user: need 9-row flip.
-function proxyToFenUci(uci) {
-  if (!uci || uci.length < 4) return uci;
-  if (_userSide !== "b") return uci;
-  const fr = parseInt(uci[1]), tr = parseInt(uci[3]);
-  if (isNaN(fr) || isNaN(tr)) return uci;
-  return uci[0] + (9 - fr) + uci[2] + (9 - tr) + uci.substring(4);
+// Convert raw 0-indexed UCI (server's original) → FEN coordinates
+function rawToFenUci(uci, userSide, isSent) {
+  if (!userSide || !uci || uci.length < 4) return uci;
+  const moverCamp = isSent ? userSide : (userSide === "w" ? "b" : "w");
+  const COLS = "abcdefghi";
+  const fc = COLS.indexOf(uci[0]), fr = parseInt(uci[1]);
+  const tc = COLS.indexOf(uci[2]), tr = parseInt(uci[3]);
+  if (fc < 0 || tc < 0 || isNaN(fr) || isNaN(tr)) return uci;
+
+  if (moverCamp === "w") {
+    if (fr <= 4) {
+      // Red's perspective: flip rows
+      return uci[0] + (9 - fr) + uci[2] + (9 - tr);
+    } else {
+      // Already FEN rows, mirror columns
+      return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];
+    }
+  } else {
+    if (fr <= 4) {
+      // Black's perspective: mirror columns
+      return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];
+    } else {
+      // In Red's perspective: flip rows
+      return uci[0] + (9 - fr) + uci[2] + (9 - tr);
+    }
+  }
 }
 
 function setLastMove(uci) {
@@ -942,15 +958,15 @@ async function restoreMovesFromSession() {
       }
     }
 
-    // Now replay with correct _userSide for proxyToFenUci
+    // Now replay with correct _userSide
     for (const m of currentMoves) {
-      const uci = m.uci;
-      if (!uci) continue;
+      const rawUci = m.uci;
+      if (!rawUci) continue;
       const sent = m.direction === "SEND";
-      const fenUci = proxyToFenUci(uci);
+      const fenUci = m.board_uci || rawToFenUci(rawUci, _userSide, sent);
       const result = GameStateTracker.applyMove(fenUci, sent);
       if (result) {
-        parsedMoves.push({ num: m.num, uci: fenUci, _rawUci: uci, sent, chinese: result.chinese });
+        parsedMoves.push({ num: m.num, uci: fenUci, _rawUci: rawUci, sent, chinese: result.chinese });
         setLastMove(fenUci);
       }
     }
@@ -1025,8 +1041,8 @@ window.qqchess.onLogLine((data) => {
         _lastSentUci = mv.uci;
         _lastSentTime = Date.now();
       }
-      mv._rawUci = mv.uci; // save raw proxy UCI for comparison
-      const fenUci = proxyToFenUci(mv.uci);
+      mv._rawUci = mv.uci; // save raw proxy UCI for "游戏" display
+      const fenUci = rawToFenUci(mv.uci, _userSide, mv.sent);
       let result = GameStateTracker.applyMove(fenUci, mv.sent);
       // Mid-game without FEN: first move may fail color check on stale board — retry
       if (!result && parsedMoves.length === 0) {
@@ -1195,11 +1211,11 @@ async function init() {
           const mv = parseMove(entry.text);
           if (mv && !parsedMoves.find((m) => m.num === mv.num)) {
             mv._rawUci = mv.uci;
-            const fenUci = proxyToFenUci(mv.uci);
-            let result = GameStateTracker.applyMove(fenUci, mv.sent);
+            const fenUci2 = rawToFenUci(mv.uci, _userSide, mv.sent);
+            let result = GameStateTracker.applyMove(fenUci2, mv.sent);
             // Mid-game without FEN: first move may fail color check on stale board — retry
             if (!result && parsedMoves.length === 0) {
-              result = GameStateTracker.applyMove(fenUci, mv.sent, true);
+              result = GameStateTracker.applyMove(fenUci2, mv.sent, true);
             }
             if (result) {
               // Detect user side from first SENT move: piece color is authoritative
@@ -1208,8 +1224,8 @@ async function init() {
                 updateMySide();
               }
               mv.chinese = result.chinese;
-              mv.uci = fenUci;
-              setLastMove(fenUci);
+              mv.uci = fenUci2;
+              setLastMove(fenUci2);
               parsedMoves.push(mv);
             }
           }

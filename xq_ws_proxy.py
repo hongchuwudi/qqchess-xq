@@ -769,6 +769,70 @@ def find_moves_in_vec(body):
 
 
 # ============================================================
+# 坐标转换：协议走子 → FEN 坐标
+# ============================================================
+
+def game_to_fen(uci, mover_camp):
+    """将游戏协议坐标转换为 FEN 坐标。
+
+    四种情况（用 from_row 自动区分）：
+    - Red mover, fr≤4: Red视角 → 翻行
+    - Red mover, fr>4: 已是FEN行 → 镜像列
+    - Black mover, fr≤4: Black视角=FEN → 不变
+    - Black mover, fr>4: Red视角 → 翻行
+    """
+    if not mover_camp or len(uci) != 4:
+        return uci
+
+    cols = 'abcdefghi'
+    try:
+        fc = cols.index(uci[0])
+        fr = int(uci[1])
+        tc = cols.index(uci[2])
+        tr = int(uci[3])
+    except (ValueError, IndexError):
+        return uci
+
+    if mover_camp == 'red':
+        if fr <= 4:
+            return f"{uci[0]}{9 - fr}{uci[2]}{9 - tr}"
+        else:
+            return f"{cols[8 - fc]}{uci[1]}{cols[8 - tc]}{uci[3]}"
+    else:
+        if fr <= 4:
+            return f"{cols[8 - fc]}{uci[1]}{cols[8 - tc]}{uci[3]}"
+        else:
+            return f"{uci[0]}{9 - fr}{uci[2]}{9 - tr}"
+
+
+def detect_coord_format(first_uci, my_camp=None):
+    """检测协议坐标是否需要翻转。
+
+    中国象棋首步永远是红方。规范坐标 (FEN/演示棋盘) 中：
+    - 红方棋子在 rows 5-9（底部）
+    - 黑方棋子在 rows 0-4（顶部）
+
+    如果首个走子（红方）的 row 出现在 0-4 半区，
+    说明协议使用了玩家视角坐标，需要整体翻转。
+
+    参数:
+        first_uci: 首个走子的 UCI 坐标
+        my_camp:   保留参数，不影响判定逻辑
+
+    返回:
+        True 表示需要翻转，False 表示已是规范坐标
+    """
+    if not first_uci or len(first_uci) != 4:
+        return False
+    try:
+        from_row = int(first_uci[1])
+    except ValueError:
+        return False
+    # 首步永远是红方，红方应在 rows 5-9
+    return from_row <= 4
+
+
+# ============================================================
 # mitmproxy 插件
 # ============================================================
 
@@ -792,6 +856,8 @@ class QQChessWSProxy:
         self._game_active = False # whether a game is currently in progress
         self._game_start_seq = 0  # seq when current game started
         self._consecutive_86006 = 0  # count consecutive 86006 RECV for end detection
+        self._need_flip = False   # whether protocol coords need flipping for demo board
+        self._last_sent_uci = None  # raw UCI of last SEND, for echo filtering
 
     def websocket_start(self, flow):
         if 'qqchess' not in flow.request.url:
@@ -942,36 +1008,59 @@ class QQChessWSProxy:
                         )
                     if scored:
                         best = scored[0]
-                        self.move_n += 1
-                        event_id = ev.get('nEventID', ev.get('nCmdID', 0))
-                        move_seat = ev.get('nSeatID', -1)
-                        # Determine camp: Red always moves first in Chinese chess
-                        if self.my_camp is None and self.move_n == 1:
-                            self.my_camp = 'red' if direction == 'SEND' else 'black'
-                            ctx.log.info(f"  [CAMP] first move is {direction} → {self.my_camp}")
-                        if self.my_camp:
-                            opp_camp = 'red' if self.my_camp == 'black' else 'black'
-                            mover_camp = self.my_camp if direction == 'SEND' else opp_camp
-                            is_own = (direction == 'SEND')
-                        else:
-                            mover_camp = None
-                            is_own = None
-                        rec = {
-                            'num': self.move_n, 'seq': self.total,
-                            'time': ts, 'direction': direction,
-                            'msgID': msg_id, 'eventID': event_id,
-                            'from': best['from'], 'to': best['to'],
-                            'uci': best['uci'],
-                            'offset': best['offset'],
-                            'vec_hex': inner.hex(),
-                            'seat': move_seat,
-                            'camp': mover_camp,
-                            'is_own': is_own,
-                        }
-                        self.moves.append(rec)
-                        self._save()  # persist after each move
-                        own_tag = ' (我方)' if is_own else (' (对手)' if is_own is False else '')
-                        ctx.log.info(f"  >>> [{move_label} #{self.move_n}] {best['uci']}{own_tag} <<<")
+                        # 过滤 RECV echo（服务器回显自己的走子）
+                        is_echo = direction == 'RECV' and best['uci'] == self._last_sent_uci
+                        if is_echo:
+                            ctx.log.info(f"  [ECHO] skip {best['uci']}")
+                        if direction == 'SEND':
+                            self._last_sent_uci = best['uci']
+
+                        if not is_echo:
+                            self.move_n += 1
+                            event_id = ev.get('nEventID', ev.get('nCmdID', 0))
+                            move_seat = ev.get('nSeatID', -1)
+                            # Determine camp: Red always moves first in Chinese chess
+                            if self.my_camp is None and self.move_n == 1:
+                                self.my_camp = 'red' if direction == 'SEND' else 'black'
+                                # 检测坐标系是否需要翻转
+                                self._need_flip = detect_coord_format(best['uci'], self.my_camp)
+                                ctx.log.info(f"  [CAMP] first move is {direction} → {self.my_camp}")
+                                if self._need_flip:
+                                    ctx.log.info(f"  [FLIP] 检测到玩家视角坐标，启用翻转转换")
+
+                            # 判断是否己方走子
+                            is_own = (direction == 'SEND') if self.my_camp else None
+
+                            if self.my_camp:
+                                opp_camp = 'red' if self.my_camp == 'black' else 'black'
+                                mover_camp = self.my_camp if is_own else opp_camp
+                            else:
+                                mover_camp = None
+
+                            # 转换为 FEN 坐标（用走子方视角）
+                            board_uci = game_to_fen(best['uci'], mover_camp)
+                            rec = {
+                                'num': self.move_n, 'seq': self.total,
+                                'time': ts, 'direction': direction,
+                                'msgID': msg_id, 'eventID': event_id,
+                                'from': best['from'], 'to': best['to'],
+                                'uci': best['uci'],
+                                'board_uci': board_uci,
+                                'offset': best['offset'],
+                                'vec_hex': inner.hex(),
+                                'seat': move_seat,
+                                'camp': mover_camp,
+                                'is_own': is_own,
+                                'need_flip': self._need_flip,
+                            }
+                            self.moves.append(rec)
+                            self._save()  # persist after each move
+                            # 日志中显示棋盘坐标（区别于协议原始坐标）
+                            flip_mark = ' [F]' if self._need_flip else ''
+                            if board_uci != best['uci']:
+                                ctx.log.info(f"  [RAW] {best['uci']}")
+                            own_tag = ' (我方)' if is_own else (' (对手)' if is_own is False else '')
+                            ctx.log.info(f"  >>> [{move_label} #{self.move_n}] {best['uci']}{own_tag} <<<")
             except Exception as e:
                 ctx.log.warn(f"  [GAME] 解析失败: {e}")
 
@@ -998,6 +1087,11 @@ class QQChessWSProxy:
     def websocket_end(self, flow):
         if not flow.metadata.get('ok'):
             return
+        # 汇总所有走子（含棋盘坐标）
+        if self.moves:
+            raw_moves = ' '.join(m.get('uci', '') for m in self.moves)
+            board_moves = ' '.join(m.get('board_uci', '') for m in self.moves)
+            ctx.log.info(f"[QQ象棋] 走子(协议): {raw_moves}")
         ctx.log.info(f"[QQ象棋] 断开 总={self.total} SEND={self.sends} RECV={self.recvs} moves={len(self.moves)}")
         if self.moves:
             ctx.log.info(f"[QQ象棋] 走子: {' '.join(m['uci'] for m in self.moves)}")
@@ -1012,6 +1106,8 @@ class QQChessWSProxy:
         self._game_active = True
         self._game_start_seq = seq
         self._consecutive_86006 = 0
+        self._need_flip = False  # will be re-detected on first move
+        self._last_sent_uci = None
         self.move_n = 0
         ctx.log.info(f"[GAME] ====== 对局 #{self.game_count + 1} 开始 (seq={seq}) ======")
 
@@ -1103,12 +1199,13 @@ class QQChessWSProxy:
         game_moves = {}
         for m in self.moves:
             gid = m.get('game_idx', 0)
-            game_moves.setdefault(gid, []).append(m['uci'])
+            game_moves.setdefault(gid, []).append(m.get('board_uci', m.get('uci', '')))
 
         sm = {
             'start': self.st.isoformat(), 'end': datetime.now().isoformat(),
             'total': self.total, 'sends': self.sends, 'recvs': self.recvs,
-            'moves': len(self.moves), 'move_list': [m['uci'] for m in self.moves],
+            'moves': len(self.moves),
+            'move_list': [m.get('board_uci', m.get('uci', '')) for m in self.moves],
             'session_key': self.session_key.hex() if self.session_key else None,
             'uin': self.uin,
             'my_seat': self.my_seat,
@@ -1116,6 +1213,7 @@ class QQChessWSProxy:
             'my_camp': self.my_camp,
             'game_count': self.game_count,
             'per_game_moves': {str(k): v for k, v in game_moves.items()},
+            'need_flip': self._need_flip,
         }
         sp = os.path.join(out, f'qqchess_summary_{ts}.json')
         with open(sp, 'w') as f:
