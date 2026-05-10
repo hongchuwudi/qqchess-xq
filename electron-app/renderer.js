@@ -51,29 +51,53 @@ const dom = {
   btnSetupRetry: $("#btn-setup-retry"),
 };
 
-// ── GameStateTracker — Chinese chess board in PLAYER PERSPECTIVE ────────
-// Grid: row 0 = player's back rank (bottom), row 9 = opponent's back rank (top)
-// Columns: 0=player's left, 8=player's right.  Raw UCI applies directly.
+// ── GameStateTracker — Chinese chess board in FEN coordinates ────────────
+// Standard FEN: row 0=Black top, row 9=Red bottom.  UCI is FEN coordinates.
 const INITIAL_FEN = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w";
 const COLS = "abcdefghi";
 
+// ── Format detection & conversion ────────────────────────────────────────
+let _format = null;  // 'A'(fr≤4) or 'B'(fr>4), locked on first move per game
+
+function detectFmt(uci) {
+  if (!uci || uci.length < 4) return null;
+  const fr = parseInt(uci[1]);
+  return isNaN(fr) ? null : (fr <= 4 ? 'A' : 'B');
+}
+
+function rawToFenUci(uci, userSide, isSent) {
+  if (!userSide || !_format || !uci || uci.length < 4) return uci;
+  const fc = COLS.indexOf(uci[0]), fr = parseInt(uci[1]);
+  const tc = COLS.indexOf(uci[2]), tr = parseInt(uci[3]);
+  if (fc < 0 || tc < 0 || isNaN(fr) || isNaN(tr)) return uci;
+
+  const mover = isSent ? userSide : (userSide === 'w' ? 'b' : 'w');
+  if (_format === 'A') {
+    return mover === 'w'
+      ? uci[0] + (9 - fr) + uci[2] + (9 - tr)              // Red → row flip
+      : COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];     // Black → col mirror
+  } else {
+    return mover === 'w'
+      ? COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3]      // Red → col mirror
+      : uci[0] + (9 - fr) + uci[2] + (9 - tr);              // Black → row flip
+  }
+}
+
+// ── Board state ──────────────────────────────────────────────────────────
 const GameStateTracker = {
-  board: null,    // 2D array 10x9 (player perspective)
-  side: "w",      // "w" = red to move, "b" = black to move
+  board: null,
+  side: "w",
   moveCount: 0,
   lastUci: null,
-  _userSide: null, // "w" or "b" — set on reset
 
-  reset(userSide) {
-    this._userSide = userSide || null;
-    this.board = fenToPlayerGrid(INITIAL_FEN, userSide);
+  reset() {
+    this.board = parseFen(INITIAL_FEN);
     this.side = "w";
     this.moveCount = 0;
     this.lastUci = null;
   },
 
-  // Apply a UCI move directly (UCI is in player perspective). No conversion.
-  applyMove(uci, sent, skipValidation) {
+  applyMove(uci) {
     if (!uci || uci.length < 4) return null;
     if (uci === this.lastUci) return null;
 
@@ -87,7 +111,7 @@ const GameStateTracker = {
     const piece = grid[fr][fc];
     if (!piece || piece === ".") return null;
 
-    const chinese = toChinese(uci, piece, fc, fr, tc, tr);
+    const chinese = toChinese(piece, fc, fr, tc, tr);
     grid[fr][fc] = ".";
     grid[tr][tc] = piece;
 
@@ -95,26 +119,14 @@ const GameStateTracker = {
     this.board = { grid, side: this.side };
     this.moveCount++;
     this.lastUci = uci;
-    this.lastChinese = chinese;
-    return { chinese, isRed: piece === piece.toUpperCase(), fen: this.getFen() };
+    return { chinese, isRed: piece === piece.toUpperCase(), fen: this.fen() };
   },
 
-  // Convert player-perspective grid to standard FEN (for Pikafish engine)
-  toEngineFen() {
-    if (!this.board) return INITIAL_FEN;
-    let grid = this.board.grid;
-    if (this._userSide === "w") grid = reverseGridRows({ grid }).grid;
-    if (this._userSide === "b") grid = mirrorGridCols({ grid }).grid;
-    return gridToFen(grid, this.side);
-  },
-
-  // Get FEN string of current board (player perspective, for display)
-  getFen() {
+  fen() {
     if (!this.board) return INITIAL_FEN;
     return gridToFen(this.board.grid, this.side);
   },
 
-  // Public: get Chinese notation for a UCI from current board
   uciToChinese(uci) {
     const fc = COLS.indexOf(uci[0]), fr = parseInt(uci[1]);
     const tc = COLS.indexOf(uci[2]), tr = parseInt(uci[3]);
@@ -122,12 +134,11 @@ const GameStateTracker = {
     if (!this.board) return uci;
     const piece = this.board.grid[fr] && this.board.grid[fr][fc];
     if (!piece || piece === ".") return uci;
-    return toChinese(uci, piece, fc, fr, tc, tr);
+    return toChinese(piece, fc, fr, tc, tr);
   },
 };
 
-// ── Pure functions (no state) ─────────────────────────────────────────────
-
+// ── Pure functions ───────────────────────────────────────────────────────
 function parseFen(fenStr) {
   const parts = fenStr.trim().split(/\s+/);
   const rows = parts[0].split("/");
@@ -138,9 +149,7 @@ function parseFen(fenStr) {
     for (const ch of rowStr) {
       if (ch >= "1" && ch <= "9") {
         for (let i = 0; i < parseInt(ch); i++) row.push(".");
-      } else {
-        row.push(ch);
-      }
+      } else { row.push(ch); }
     }
     if (row.length !== 9) return null;
     grid.push(row);
@@ -162,61 +171,38 @@ function gridToFen(grid, side) {
   return rows.join("/") + " " + (side || "w");
 }
 
-function mirrorGridCols(grid) {
-  return {
-    grid: grid.grid ? grid.grid.map((r) => [...r].reverse()) : grid.map((r) => [...r].reverse()),
-    side: grid.side || "w",
-  };
-}
-
-function reverseGridRows(grid) {
-  return {
-    grid: (grid.grid ? grid.grid : grid).slice().reverse(),
-    side: grid.side || "w",
-  };
-}
-
-// FEN (Red bottom, Black top) → player perspective (player at rows 0-4)
-function fenToPlayerGrid(fenStr, userSide) {
-  const board = parseFen(fenStr);
-  if (!board) return null;
-  if (userSide === "w") return reverseGridRows(board);  // Red at 0-4
-  if (userSide === "b") return mirrorGridCols(board);   // Black at 0-4
-  return board;
-}
-
-function toChinese(uci, piece, fc, fr, tc, tr) {
+// toChinese — FEN coordinates (Red rows 5-9 bottom, Black rows 0-4 top)
+// Red advancing = tr < fr (toward row 0).  Black advancing = tr > fr.
+function toChinese(piece, fc, fr, tc, tr) {
   const isRed = piece === piece.toUpperCase();
-  const redCols = "一二三四五六七八九";
-  const blackCols = "987654321";
-  const pieceNames = {
+  const redCols = "一二三四五六七八九";   // col 0=一(left), col 8=九(right)
+  const blkCols = "987654321";           // col 0=9(left), col 8=1(right)
+  const names = {
     K: "帥", A: "仕", B: "相", N: "馬", R: "車", C: "砲", P: "兵",
     k: "将", a: "士", b: "象", n: "马", r: "车", c: "炮", p: "卒",
   };
-  const straightPieces = new Set(["R", "C", "K", "P", "r", "c", "k", "p"]);
-  const name = pieceNames[piece] || piece;
-  const isStraight = straightPieces.has(piece);
+  const straight = new Set(["R", "C", "K", "P", "r", "c", "k", "p"]);
+  const name = names[piece] || piece;
+  const isStraight = straight.has(piece);
 
-  let fromCol, toCol, action, number;
+  let fCol, tCol, action, number;
   if (isRed) {
-    fromCol = redCols[fc];
-    toCol = redCols[tc];
-    if (fr === tr) { action = "平"; number = toCol; }
-    else if (tr > fr) { action = "进"; number = isStraight ? String(tr - fr) : toCol; }
-    else { action = "退"; number = isStraight ? String(fr - tr) : toCol; }
+    fCol = redCols[fc]; tCol = redCols[tc];
+    if (fr === tr) { action = "平"; number = tCol; }
+    else if (tr < fr) { action = "进"; number = isStraight ? String(fr - tr) : tCol; }
+    else { action = "退"; number = isStraight ? String(tr - fr) : tCol; }
   } else {
-    fromCol = blackCols[8 - fc];
-    toCol = blackCols[8 - tc];
-    if (fr === tr) { action = "平"; number = toCol; }
-    else if (tr > fr) { action = "进"; number = isStraight ? String(tr - fr) : toCol; }
-    else { action = "退"; number = isStraight ? String(fr - tr) : toCol; }
+    fCol = blkCols[8 - fc]; tCol = blkCols[8 - tc];
+    if (fr === tr) { action = "平"; number = tCol; }
+    else if (tr > fr) { action = "进"; number = isStraight ? String(tr - fr) : tCol; }
+    else { action = "退"; number = isStraight ? String(fr - tr) : tCol; }
   }
-  return `${name}${fromCol}${action}${number}`;
+  return `${name}${fCol}${action}${number}`;
 }
 
 
 // Init tracker
-GameStateTracker.reset(null);
+GameStateTracker.reset();
 
 // ── Board drawing ───────────────────────────────────────────────────────
 const BOARD_COLS = "abcdefghi";
@@ -259,8 +245,8 @@ function setBestMove(uci) {
   }
 }
 
-function bx(c) { return ML + c * DX; }
-function by(r) { return MT + (9 - r) * DY; }
+function bx(c) { return _userSide === "b" ? ML + (8 - c) * DX : ML + c * DX; }
+function by(r) { return _userSide === "b" ? MT + (9 - r) * DY : MT + r * DY; }
 
 function redrawBoard() {
   const canvas = dom.boardCanvas;
@@ -313,10 +299,10 @@ function redrawBoard() {
   const redLR = "一二三四五六七八九";
   const blkLR = "987654321";
   for (let i = 0; i < 9; i++) {
-    const topLabel = _userSide === "b" ? redLR[i] : blkLR[i];
-    const botLabel = _userSide === "b" ? blkLR[i] : redLR[i];
-    ctx.fillText(topLabel, bx(i), by(9) - 5);
-    ctx.fillText(botLabel, bx(i), by(0) + 14);
+    const topLabel = _userSide === "b" ? redLR[8 - i] : blkLR[i];
+    const botLabel = _userSide === "b" ? blkLR[8 - i] : redLR[i];
+    ctx.fillText(topLabel, bx(i), by(0) - 5);
+    ctx.fillText(botLabel, bx(i), by(9) + 14);
   }
 
   // FEN coordinate labels (a-i columns at bottom, 0-9 rows on right)
@@ -727,7 +713,7 @@ function scheduleAnalysis(fen, isOpponentMove) {
   }
   if (_analysisTimer) clearTimeout(_analysisTimer);
   _analysisTimer = setTimeout(() => {
-    triggerAnalysis(GameStateTracker.toEngineFen());
+    triggerAnalysis(GameStateTracker.fen());
     _analysisTimer = null;
   }, 300);
 }
@@ -750,7 +736,7 @@ async function forceAnalyze() {
     for (const mv of parsedMoves) {
       if (mv.uci !== lastUci) { moveList.push(mv.uci); lastUci = mv.uci; }
     }
-    const result = await window.qqchess.analyzePosition(GameStateTracker.toEngineFen(), moveList);
+    const result = await window.qqchess.analyzePosition(GameStateTracker.fen(), moveList);
     if (version !== _analysisVersion) return;
     if (result && !result.error) {
       _lastAnalyzedFen = _currentFen;
@@ -803,7 +789,7 @@ dom.btnClear.addEventListener("click", async () => {
   await window.qqchess.clearLogs();
   logLines = [];
   parsedMoves = [];
-  GameStateTracker.reset(_userSide);
+  GameStateTracker.reset();
   _currentFen = INITIAL_FEN;
   _lastAnalyzedFen = null;
   _lastFrom = _lastTo = _bestFrom = _bestTo = null;
@@ -912,7 +898,7 @@ async function restoreMovesFromSession() {
     if (currentMoves.length === 0) return;
 
     // Reset board and replay current-game moves from session file
-    GameStateTracker.reset(_userSide);
+    GameStateTracker.reset();
     parsedMoves = [];
     _userSide = null;
     _currentFen = INITIAL_FEN;
@@ -929,17 +915,17 @@ async function restoreMovesFromSession() {
 
     // Now replay with correct _userSide
     for (const m of currentMoves) {
-      const rawUci = m.uci;
-      if (!rawUci) continue;
+      const fenUci = m.board_uci || m.uci;
+      if (!fenUci) continue;
       const sent = m.direction === "SEND";
-      const result = GameStateTracker.applyMove(rawUci, sent);
+      const result = GameStateTracker.applyMove(fenUci);
       if (result) {
-        parsedMoves.push({ num: m.num, uci: fenUci, _rawUci: rawUci, sent, chinese: result.chinese });
+        parsedMoves.push({ num: m.num, uci: fenUci, _rawUci: m.uci, sent, chinese: result.chinese });
         setLastMove(fenUci);
       }
     }
     if (version !== _restoreVersion) { console.log('[restore] stale after replay, discard'); return; }
-    _currentFen = GameStateTracker.getFen();
+    _currentFen = GameStateTracker.fen();
     refreshMoveList();
     redrawBoard();
     dom.engineFen.textContent = _currentFen;
@@ -962,9 +948,10 @@ window.qqchess.onLogLine((data) => {
 
   // Camp detection from proxy [CAMP] log — authoritative side assignment
   if (data.text.includes("[CAMP]")) {
-    const campMatch = data.text.match(/\[CAMP\].*→\s*(red|black)/);
+    const campMatch = data.text.match(/\[CAMP\].*→\s*(red|black)\s+fmt=([AB])/);
     if (campMatch) {
       const newSide = campMatch[1] === "red" ? "w" : "b";
+      _format = campMatch[2];  // lock format for this game
       if (_userSide !== newSide) {
         _userSide = newSide;
         updateMySide();
@@ -981,16 +968,16 @@ window.qqchess.onLogLine((data) => {
       const fen = m[1];
       const board = GameStateTracker.parseFen(fen);
       if (board) {
-        GameStateTracker.reset(_userSide);
-        GameStateTracker.board = fenToPlayerGrid(fen, _userSide);
+        GameStateTracker.reset();
+        GameStateTracker.board = board;
         GameStateTracker.side = board.side;
-        _currentFen = GameStateTracker.getFen();
+        _currentFen = GameStateTracker.fen();
         parsedMoves = [];
         _lastFrom = _lastTo = _bestFrom = _bestTo = null;
         redrawBoard();
         refreshMoveList();
         dom.engineFen.textContent = _currentFen;
-        scheduleAnalysis(GameStateTracker.getFen());
+        scheduleAnalysis(GameStateTracker.fen());
       }
     }
   }
@@ -1007,44 +994,47 @@ window.qqchess.onLogLine((data) => {
         _lastSentUci = mv.uci;
         _lastSentTime = Date.now();
       }
-      mv._rawUci = mv.uci;
-      let result = GameStateTracker.applyMove(mv.uci, mv.sent);
+      let result = GameStateTracker.applyMove(mv.uci);
       if (!result && parsedMoves.length === 0) {
-        result = GameStateTracker.applyMove(mv.uci, mv.sent, true);
+        result = GameStateTracker.applyMove(mv.uci);
       }
       if (!result) { refreshMoveList(); return; }
-      if (_userSide === null && mv.sent) {
-        _userSide = result.isRed ? "w" : "b";
-        GameStateTracker.reset(_userSide);
-        // re-apply this move on the properly-oriented board
-        result = GameStateTracker.applyMove(mv.uci, mv.sent);
-        if (!result) { refreshMoveList(); return; }
-        updateMySide();
+      if (mv.sent) {
+        const camp = result.isRed ? "w" : "b";
+        if (_userSide !== camp) {
+          _userSide = camp;
+          GameStateTracker.reset();
+          parsedMoves.forEach((pm) => {
+            GameStateTracker.applyMove(pm.uci);
+          });
+          result = GameStateTracker.applyMove(mv.uci);
+          if (!result) { refreshMoveList(); return; }
+          updateMySide();
+        }
       }
+      mv._rawUci = mv.uci;
       mv.chinese = result.chinese;
-      mv.uci = mv.uci;
       parsedMoves.push(mv);
       _restoreVersion++;
-      _currentFen = GameStateTracker.getFen();
+      _currentFen = GameStateTracker.fen();
       setLastMove(mv.uci);
       _bestFrom = _bestTo = null;
       redrawBoard();
       refreshMoveList();
-      // Auto-analyze after every move (both user and opponent)
       scheduleAnalysis(result.fen, !mv.sent);
-    }
   }
 
   // New game detected — reset game state
   if (data.text.includes("[GAME] ====== 对局") && data.text.includes("开始")) {
     parsedMoves = [];
     _engineMoves = [];
-    GameStateTracker.reset(_userSide);
+    GameStateTracker.reset();
     _currentFen = INITIAL_FEN;
     _lastAnalyzedFen = null;
     _userSide = null;
     _lastSentUci = null;
     _lastSentTime = 0;
+    _format = null;
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
     _gameActive = true;
     _restoreVersion++;
@@ -1052,7 +1042,7 @@ window.qqchess.onLogLine((data) => {
     redrawBoard();
     updateEngineUI(null);
     dom.engineFen.textContent = INITIAL_FEN;
-    scheduleAnalysis(GameStateTracker.getFen());
+    scheduleAnalysis(GameStateTracker.fen());
   }
 
   // 86001 arrives — only restore on reconnection (same game), not new game
@@ -1067,7 +1057,7 @@ window.qqchess.onLogLine((data) => {
   if (data.text.includes("[GAME] ====== 对局") && data.text.includes("结束")) {
     parsedMoves = [];
     _engineMoves = [];
-    GameStateTracker.reset(_userSide);
+    GameStateTracker.reset();
     _currentFen = INITIAL_FEN;
     _lastAnalyzedFen = null;
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
@@ -1109,7 +1099,7 @@ window.qqchess.onEngineStatus((data) => {
     setEngineStatus(true, `就绪 — ${data.name || "Pikafish"}`);
     // If we have moves from a game, analyze current position
     if (_currentFen !== INITIAL_FEN && _currentFen !== _lastAnalyzedFen) {
-      scheduleAnalysis(GameStateTracker.getFen());
+      scheduleAnalysis(GameStateTracker.fen());
     }
   } else {
     // Engine stopped or failed — check if it was ever started
@@ -1147,7 +1137,7 @@ async function init() {
       logLines = [];
       parsedMoves = [];
       _userSide = null;
-      GameStateTracker.reset(_userSide);
+      GameStateTracker.reset();
       for (const entry of existingLogs) {
         logLines.push(entry);
         // Camp detection from proxy [CAMP] log
@@ -1164,10 +1154,10 @@ async function init() {
             const fen = m[1];
             const board = GameStateTracker.parseFen(fen);
             if (board) {
-              GameStateTracker.reset(_userSide);
-              GameStateTracker.board = fenToPlayerGrid(fen, _userSide);
+              GameStateTracker.reset();
+              GameStateTracker.board = board;
               GameStateTracker.side = board.side;
-              _currentFen = GameStateTracker.getFen();
+              _currentFen = GameStateTracker.fen();
               parsedMoves = [];
               _lastFrom = _lastTo = _bestFrom = _bestTo = null;
             }
@@ -1177,27 +1167,28 @@ async function init() {
           const mv = parseMove(entry.text);
           if (mv && !parsedMoves.find((m) => m.num === mv.num)) {
             mv._rawUci = mv.uci;
-            let result = GameStateTracker.applyMove(mv.uci, mv.sent);
-            if (!result && parsedMoves.length === 0) {
-              result = GameStateTracker.applyMove(mv.uci, mv.sent, true);
-            }
-            if (result) {
-              if (_userSide === null && mv.sent) {
-                _userSide = result.isRed ? "w" : "b";
-                GameStateTracker.reset(_userSide);
-                result = GameStateTracker.applyMove(mv.uci, mv.sent);
+            let result = GameStateTracker.applyMove(mv.uci);
+            if (!result) continue;
+            if (mv.sent) {
+              const camp = result.isRed ? "w" : "b";
+              if (_userSide !== camp) {
+                _userSide = camp;
+                GameStateTracker.reset();
+                parsedMoves.forEach((pm) => {
+                  GameStateTracker.applyMove(pm.uci);
+                });
+                result = GameStateTracker.applyMove(mv.uci);
                 if (!result) continue;
                 updateMySide();
               }
-              mv.chinese = result.chinese;
-              mv.uci = mv.uci;
-              setLastMove(mv.uci);
-              parsedMoves.push(mv);
             }
+            mv.chinese = result.chinese;
+            setLastMove(mv.uci);
+            parsedMoves.push(mv);
           }
         }
       }
-      _currentFen = GameStateTracker.getFen();
+      _currentFen = GameStateTracker.fen();
       redrawBoard();
       refreshLogView();
       refreshMoveList();
