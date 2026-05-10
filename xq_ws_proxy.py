@@ -59,6 +59,8 @@ class QQChessWSProxy:
         self._consecutive_86006 = 0  # count consecutive 86006 RECV for end detection
         self._format = None       # 'A' or 'B', locked on first move per game
         self._last_sent_uci = None  # raw UCI of last SEND, for echo filtering
+        self._inject_template = None   # raw WS frame of last SEND (auto-play template)
+        self._inject_old_coords = None # 4B 1-indexed coords in template
 
     def websocket_start(self, flow):
         if 'qqchess' not in flow.request.url:
@@ -217,8 +219,13 @@ class QQChessWSProxy:
                         is_echo = direction == 'RECV' and best['uci'] == self._last_sent_uci
                         if is_echo:
                             ctx.log.info(f"  [ECHO] skip {best['uci']}")
-                        if direction == 'SEND':
+                        if direction == 'SEND' and msg_id == 86004:
                             self._last_sent_uci = best['uci']
+                            self._inject_template = raw
+                            self._inject_old_coords = bytes([
+                                best['from'][0] + 1, best['from'][1] + 1,
+                                best['to'][0] + 1, best['to'][1] + 1,
+                            ])
 
                         if not is_echo:
                             self.move_n += 1
@@ -280,6 +287,53 @@ class QQChessWSProxy:
                 except: pass
             dec_rec['strings'] = ss[:20]
         self.decoded.append(dec_rec)
+
+        # ---- 自动走子注入 ----
+        self._check_inject(flow)
+
+    def _check_inject(self, flow):
+        """检查 _inject.json, 有则替换模板坐标并注入到服务器."""
+        import json as _json
+        sessions_dir = os.environ.get('QQCHESS_DATA_DIR',
+                        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'sessions'))
+        inject_path = os.path.join(sessions_dir, '_inject.json')
+        if not os.path.exists(inject_path):
+            return
+        try:
+            with open(inject_path, 'r', encoding='utf-8') as f:
+                data = _json.load(f)
+            os.remove(inject_path)
+        except Exception as e:
+            ctx.log.warn(f"[INJECT] read error: {e}")
+            return
+
+        uci = data.get('uci', '')
+        if not uci or not self._inject_template:
+            ctx.log.warn(f"[INJECT] missing uci or template")
+            return
+
+        cols = 'abcdefghi'
+        try:
+            fc = cols.index(uci[0]) + 1
+            fr = int(uci[1]) + 1
+            tc = cols.index(uci[2]) + 1
+            tr = int(uci[3]) + 1
+        except (ValueError, IndexError):
+            ctx.log.warn(f"[INJECT] bad uci: {uci}")
+            return
+        new_coords = bytes([fc, fr, tc, tr])
+
+        modified = self._inject_template.replace(self._inject_old_coords, new_coords, 1)
+        if modified == self._inject_template:
+            ctx.log.warn(f"[INJECT] coords {self._inject_old_coords.hex()} not found in template")
+            return
+
+        ctx.log.info(f"[INJECT] {uci}  {self._inject_old_coords.hex()}→{new_coords.hex()}")
+        try:
+            flow.inject_message(flow.server_conn, modified)
+            ctx.log.info(f"[INJECT] OK")
+        except Exception as e:
+            ctx.log.error(f"[INJECT] failed: {e}")
 
     def websocket_end(self, flow):
         if not flow.metadata.get('ok'):

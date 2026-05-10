@@ -534,71 +534,19 @@ function setupIPC() {
   });
 
   ipcMain.handle("autoplay-move", async (_event, uci) => {
-    if (!gameWebContents || gameWebContents.isDestroyed()) {
-      addLog("[autoplay] Game webview not available");
-      return false;
-    }
     if (!uci || uci.length < 4) {
       addLog("[autoplay] Invalid UCI: " + uci);
-      return false;
+      return { ok: false, reason: "bad uci" };
     }
-    addLog("[autoplay] Injecting move: " + uci);
-
+    // Write injection file for proxy to pick up and send as WS message
+    const injectPath = path.join(SESSIONS_DIR, "_inject.json");
     try {
-      await gameWebContents.executeJavaScript(`
-        (function(uci) {
-          const cols = 'abcdefghi';
-          const fc = cols.indexOf(uci[0]);
-          const fr = parseInt(uci[1]);
-          const tc = cols.indexOf(uci[2]);
-          const tr = parseInt(uci[3]);
-          if (fc < 0 || tc < 0 || isNaN(fr) || isNaN(tr)) return 'bad uci';
-
-          // Find the game canvas (Cocos Creator renders on a canvas)
-          const canvas = document.querySelector('canvas');
-          if (!canvas) return 'no canvas';
-
-          const rect = canvas.getBoundingClientRect();
-          // Board area: ~5% margin on each side
-          const ml = rect.width * 0.05;
-          const mt = rect.height * 0.05;
-          const bw = rect.width * 0.9;
-          const bh = rect.height * 0.9;
-          const cellW = bw / 8;   // 9 columns → 8 gaps
-          const cellH = bh / 9;   // 10 rows → 9 gaps
-
-          const fromX = rect.left + ml + fc * cellW;
-          const fromY = rect.top + mt + fr * cellH;
-          const toX = rect.left + ml + tc * cellW;
-          const toY = rect.top + mt + tr * cellH;
-
-          function firePointer(x, y, type) {
-            canvas.dispatchEvent(new PointerEvent(type, {
-              bubbles: true, cancelable: true,
-              clientX: x, clientY: y,
-              pointerId: 1, pointerType: 'mouse',
-              isPrimary: true, pressure: 0.5,
-            }));
-          }
-
-          // Click source square
-          firePointer(fromX, fromY, 'pointerdown');
-          firePointer(fromX, fromY, 'pointerup');
-
-          // Brief delay then click target
-          return new Promise((resolve) => {
-            setTimeout(() => {
-              firePointer(toX, toY, 'pointerdown');
-              firePointer(toX, toY, 'pointerup');
-              resolve('ok:' + uci);
-            }, 180);
-          });
-        })('${uci}')
-      `);
-      return true;
+      fs.writeFileSync(injectPath, JSON.stringify({ uci }), "utf-8");
+      addLog("[autoplay] inject file written: " + uci);
+      return { ok: true };
     } catch (e) {
-      addLog("[autoplay] Injection failed: " + e.message);
-      return false;
+      addLog("[autoplay] FAIL writing inject file: " + e.message);
+      return { ok: false, reason: e.message };
     }
   });
 

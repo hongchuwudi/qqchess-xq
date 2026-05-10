@@ -268,6 +268,13 @@ function rawToFenUci(uci, userSide, isSent) {
   }
 }
 
+// fenToRawUci: engine FEN → game raw coords for auto-play clicking.
+// Both format ops (flip rows, mirror cols) are self-inverse,
+// so rawToFenUci works in reverse.
+function fenToRawUci(uci, userSide, isSent) {
+  return rawToFenUci(uci, userSide, isSent);
+}
+
 function setLastMove(uci) {
   const fc = BOARD_COLS.indexOf(uci[0]), fr = parseInt(uci[1]);
   const tc = BOARD_COLS.indexOf(uci[2]), tr = parseInt(uci[3]);
@@ -708,10 +715,12 @@ function updateEngineUI(result) {
     refreshMoveList();
   }
 
-  // Auto-play: if engine analyzed after opponent's move, fire the best move
+  // Auto-play: convert engine FEN → raw, fire after random delay
   if (_pendingAutoPlay && result.bestMove && result.bestMove !== "0000") {
     _pendingAutoPlay = false;
-    window.qqchess.autoPlayMove(result.bestMove);
+    const rawUci = fenToRawUci(result.bestMove, _userSide, true);
+    const delay = 1000 + Math.random() * 1500;
+    setTimeout(() => window.qqchess.autoPlayMove(rawUci), delay);
   }
 
   const score = result.score || 0;
