@@ -6,17 +6,25 @@ import re
 # WS 帧解析
 # ============================================================
 
-SEND_MAGIC = b'\x01\x10\xcf\x10\x01'
-RECV_MAGIC = b'\x0c\x10\x01'
+SEND_PREFIX = b'\x01\x10\xcf'   # 3 fixed bytes, then 2 session bytes
+RECV_PREFIX = b'\x0c'          # 1 fixed byte,  then 2 session bytes
 
 
 def unwrap_ws(raw):
-    """剥离 WebSocket 帧外层, 返回 (direction, jce_bytes)"""
+    """剥离 WebSocket 帧外层, 返回 (direction, jce_bytes)
+
+    帧格式: [2B big-endian length][magic][route+JCE body]
+    SEND magic = 01 10 cf XX YY (5B, XX YY = session-specific)
+    RECV magic = 0c XX YY        (3B, XX YY = session-specific)
+    QQ和微信登录的 session bytes 不同, 不能硬编码。
+    """
     if len(raw) < 7:
         return None, b''
-    if raw[2:7] == SEND_MAGIC:
+    # SEND: 01 10 cf + 2 session bytes → skip 2+5=7 bytes
+    if raw[2:5] == SEND_PREFIX:
         return 'SEND', raw[7:]
-    if raw[2:5] == RECV_MAGIC:
+    # RECV: 0c + 2 session bytes → skip 2+3=5 bytes
+    if raw[2] == 0x0c:
         return 'RECV', raw[5:]
     return None, b''
 
