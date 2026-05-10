@@ -384,7 +384,16 @@ class QQChessWSProxy:
 
         ctx.log.info(f"[INJECT] {uci}  pos={idx}  {new_coords.hex()}")
         try:
-            ctx.master.commands.call("inject.websocket", flow, False, modified, False)
+            import asyncio as _asyncio
+            loop = _asyncio.get_event_loop()
+            if loop.is_running():
+                # In event loop — call directly
+                ctx.master.commands.call("inject.websocket", flow, False, modified, False)
+            else:
+                # From background thread — schedule on event loop
+                loop.call_soon_threadsafe(
+                    lambda: ctx.master.commands.call("inject.websocket", flow, False, modified, False)
+                )
             ctx.log.info(f"[INJECT] OK")
             os.remove(inject_path)
         except Exception as e:
