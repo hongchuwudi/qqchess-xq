@@ -66,10 +66,7 @@ const GameStateTracker = {
 
   reset(userSide) {
     this._userSide = userSide || null;
-    this.board = parseFen(INITIAL_FEN);
-    if (userSide === "b" && this.board) {
-      this.board = mirrorGridCols(this.board);
-    }
+    this.board = fenToPlayerGrid(INITIAL_FEN, userSide);
     this.side = "w";
     this.moveCount = 0;
     this.lastUci = null;
@@ -105,9 +102,9 @@ const GameStateTracker = {
   // Convert player-perspective grid to standard FEN (for Pikafish engine)
   toEngineFen() {
     if (!this.board) return INITIAL_FEN;
-    const grid = this._userSide === "b"
-      ? mirrorGridCols(this.board.grid)
-      : this.board.grid;
+    let grid = this.board.grid;
+    if (this._userSide === "w") grid = reverseGridRows({ grid }).grid;
+    if (this._userSide === "b") grid = mirrorGridCols({ grid }).grid;
     return gridToFen(grid, this.side);
   },
 
@@ -170,6 +167,22 @@ function mirrorGridCols(grid) {
     grid: grid.grid ? grid.grid.map((r) => [...r].reverse()) : grid.map((r) => [...r].reverse()),
     side: grid.side || "w",
   };
+}
+
+function reverseGridRows(grid) {
+  return {
+    grid: (grid.grid ? grid.grid : grid).slice().reverse(),
+    side: grid.side || "w",
+  };
+}
+
+// FEN (Red bottom, Black top) → player perspective (player at rows 0-4)
+function fenToPlayerGrid(fenStr, userSide) {
+  const board = parseFen(fenStr);
+  if (!board) return null;
+  if (userSide === "w") return reverseGridRows(board);  // Red at 0-4
+  if (userSide === "b") return mirrorGridCols(board);   // Black at 0-4
+  return board;
 }
 
 function toChinese(uci, piece, fc, fr, tc, tr) {
@@ -969,7 +982,7 @@ window.qqchess.onLogLine((data) => {
       const board = GameStateTracker.parseFen(fen);
       if (board) {
         GameStateTracker.reset(_userSide);
-        GameStateTracker.board = _userSide === "b" ? mirrorGridCols(board) : board;
+        GameStateTracker.board = fenToPlayerGrid(fen, _userSide);
         GameStateTracker.side = board.side;
         _currentFen = GameStateTracker.getFen();
         parsedMoves = [];
@@ -1152,7 +1165,7 @@ async function init() {
             const board = GameStateTracker.parseFen(fen);
             if (board) {
               GameStateTracker.reset(_userSide);
-              GameStateTracker.board = _userSide === "b" ? mirrorGridCols(board) : board;
+              GameStateTracker.board = fenToPlayerGrid(fen, _userSide);
               GameStateTracker.side = board.side;
               _currentFen = GameStateTracker.getFen();
               parsedMoves = [];
