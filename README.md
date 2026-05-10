@@ -57,7 +57,6 @@ qqchess-xq/
 ├── engines/                    # 象棋引擎 (需自行下载)
 │   └── pikayu-YYYYMMDD/        #   皮卡鱼 (Pikafish) — 自动匹配最新日期
 ├── data/
-│   ├── h5login.qqchess.qq.com.har  # 127 MB HAR 抓包样本
 │   └── sessions/                   # 代理会话输出 (自动生成)
 ├── qqchess_src/                # 下载的游戏客户端源码
 ├── docs/                       # 分析文档
