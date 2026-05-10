@@ -61,6 +61,19 @@ class QQChessWSProxy:
         self._last_sent_uci = None  # raw UCI of last SEND, for echo filtering
         self._inject_template = None   # raw WS frame of last SEND (auto-play template)
         self._inject_old_coords = None # 4B 1-indexed coords in template
+        self._inject_flow = None       # current flow (for timer-based injection)
+        self._inject_timer = None      # periodic injection check timer
+
+    def _start_inject_timer(self):
+        """每隔500ms主动检查注入文件(不依赖WS消息触发)"""
+        import threading as _th
+        def _check():
+            if self._inject_flow:
+                self._check_inject(self._inject_flow, None)
+            self._inject_timer = _th.Timer(0.5, _check)
+            self._inject_timer.daemon = True
+            self._inject_timer.start()
+        _check()
 
     def websocket_start(self, flow):
         if 'qqchess' not in flow.request.url:
@@ -68,6 +81,8 @@ class QQChessWSProxy:
         flow.metadata['ok'] = True
         flow.metadata['ts'] = datetime.now().isoformat()
         ctx.log.info(f"[QQ象棋] 已连接 {flow.request.url}")
+        if not self._inject_timer:
+            self._start_inject_timer()
 
     def websocket_message(self, flow):
         if not flow.metadata.get('ok'):
@@ -292,8 +307,9 @@ class QQChessWSProxy:
             dec_rec['strings'] = ss[:20]
         self.decoded.append(dec_rec)
 
-    def _check_inject(self, flow, raw):
+    def _check_inject(self, flow, raw=None):
         """检查 _inject.json, 有则替换模板坐标并注入到服务器."""
+        self._inject_flow = flow
         import json as _json
         sessions_dir = os.environ.get('QQCHESS_DATA_DIR',
                         os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'sessions'))
@@ -303,15 +319,14 @@ class QQChessWSProxy:
         try:
             with open(inject_path, 'r', encoding='utf-8') as f:
                 data = _json.load(f)
-            os.remove(inject_path)
         except Exception as e:
             ctx.log.warn(f"[INJECT] read error: {e}")
             return
 
         uci = data.get('uci', '')
         if not uci or not self._inject_template:
-            ctx.log.warn(f"[INJECT] missing uci or template")
-            return
+            ctx.log.info(f"[INJECT] waiting for template (uci={uci})")
+            return  # keep file, try again next message
 
         cols = 'abcdefghi'
         try:
@@ -336,6 +351,7 @@ class QQChessWSProxy:
         try:
             flow.inject_message(flow.server_conn, modified)
             ctx.log.info(f"[INJECT] OK")
+            os.remove(inject_path)
         except Exception as e:
             ctx.log.error(f"[INJECT] failed: {e}")
 
