@@ -1046,7 +1046,7 @@ class QQChessWSProxy:
                                 mover_camp = None
 
                             # 转换为 FEN 坐标（基于阵营+方向，不依赖 from_row）
-                            board_uci = game_to_fen(best['uci'], self.my_camp, is_own)
+                            board_uci = best['uci']  # 棋盘已改用玩家视角，raw UCI 直达
                             rec = {
                                 'num': self.move_n, 'seq': self.total,
                                 'time': ts, 'direction': direction,
