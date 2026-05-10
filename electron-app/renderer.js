@@ -257,13 +257,13 @@ function rawToFenUci(uci, userSide, isSent) {
     if (moverCamp === "w") {
       return uci[0] + (9 - fr) + uci[2] + (9 - tr);              // Red→row flip
     } else {
-      return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];     // Black→col mirror
+      return uci[0] + (9 - fr) + uci[2] + (9 - tr);              // Black→row flip
     }
   } else { // 'B'
     if (moverCamp === "w") {
       return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];     // Red→col mirror
     } else {
-      return uci[0] + (9 - fr) + uci[2] + (9 - tr);              // Black→row flip
+      return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];     // Black→col mirror
     }
   }
 }

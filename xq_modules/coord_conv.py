@@ -5,10 +5,10 @@
 # ============================================================
 
 def game_to_fen(uci, mover_camp, fmt):
-    """将 raw UCI 转换为 FEN 坐标。fmt 首步锁定后整局不变，过河不受影响。
+    """将 raw UCI 转换为 FEN 坐标。fmt 首步锁定后整局不变。
 
-    fmt='A'(fr≤4): 玩家视角 — 红翻行 / 黑镜像列
-    fmt='B'(fr>4): 行=FEN列=raw — 红镜像列 / 黑翻行
+    fmt='A'(fr≤4): 红黑都翻行
+    fmt='B'(fr>4): 红黑都镜像列
     """
     if not mover_camp or not fmt or len(uci) != 4:
         return uci
@@ -26,12 +26,12 @@ def game_to_fen(uci, mover_camp, fmt):
         if mover_camp == 'red':
             return f"{uci[0]}{9 - fr}{uci[2]}{9 - tr}"     # 翻行
         else:
-            return f"{cols[8 - fc]}{uci[1]}{cols[8 - tc]}{uci[3]}"  # 镜像列
+            return f"{uci[0]}{9 - fr}{uci[2]}{9 - tr}"     # 翻行
     else:  # 'B'
         if mover_camp == 'red':
             return f"{cols[8 - fc]}{uci[1]}{cols[8 - tc]}{uci[3]}"   # 镜像列
         else:
-            return f"{uci[0]}{9 - fr}{uci[2]}{9 - tr}"     # 翻行
+            return f"{cols[8 - fc]}{uci[1]}{cols[8 - tc]}{uci[3]}"  # 镜像列
 
 
 def detect_format(first_uci):

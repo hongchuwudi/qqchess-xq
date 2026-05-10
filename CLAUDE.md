@@ -61,9 +61,28 @@ Three coordinate spaces exist, and every move must be converted correctly betwee
 
 The game protocol encodes moves from the **mover's perspective** (mover's own pieces at rows 0–4), using Chinese chess column numbering (right-to-left: 九→一). But `_raw_move()` maps columns left-to-right (a=1, b=2, ..., i=9). This creates a column mismatch: a Chinese column 八(h) may be encoded as raw byte 2 (b).
 
-Additionally, the server sometimes pre-flips rows (Red at 5–9, matching FEN) while leaving columns in raw encoding. The result: a given move can arrive in one of two sub-formats, distinguishable only by `from_row`:
+Additionally, the server sometimes pre-flips rows (Red at 5–9, matching FEN) while leaving columns in raw encoding. The result: a given move can arrive in one of two **formats**, distinguishable by the first move's `from_row`:
 
-#### The four cases (determined by mover camp + from_row)
+#### Format locking (final solution, 2026-05-10)
+
+The format is detected once on the first move of a game and **locked for the entire game**. All moves within a game use the same operation — `mover_camp` (red/black) does NOT affect which operation to apply.
+
+| Format | First move `from_row` | Operation (all moves) |
+|--------|----------------------|----------------------|
+| **A** | ≤ 4 | **Flip rows**: `fr = 9 - fr`, `tr = 9 - tr` |
+| **B** | > 4 | **Mirror columns**: `fc = 8 - fc`, `tc = 8 - tc` |
+
+- **Format A**: Both red and black moves → flip rows (columns unchanged)
+- **Format B**: Both red and black moves → mirror columns (rows unchanged)
+
+This replaced the previous "four cases" per-move `from_row` approach, which incorrectly split red/black into different operations. Empirical testing confirmed: the format is a property of the **game session**, not of individual moves. The mover's camp does not determine which operation to use.
+
+#### Why the four-cases approach was wrong
+
+The earlier analysis (cases #1-#4 below, now superseded) assumed `mover_camp` + `from_row` jointly determine the operation. This led to format A having "Red→flip rows, Black→mirror columns" and format B the reverse. But actual game data showed that within a format-A game, Black moves crossing the river also need flip rows (not mirror columns). The format is simpler than originally thought: **one game, one operation**.
+
+<details>
+<summary>Superseded: the four cases (kept for historical reference)</summary>
 
 | # | Mover | from_row | Meaning | Operation | Example |
 |---|-------|----------|---------|-----------|---------|
@@ -72,20 +91,20 @@ Additionally, the server sometimes pre-flips rows (Red at 5–9, matching FEN) w
 | 3 | Black | ≤4 | Black's perspective, columns raw | **Mirror columns** | h0g2 → b0c2 |
 | 4 | Black | >4 | Red's perspective (Black at 5–9) | **Flip rows** | g6g5 → g3g4 |
 
-- **Flip rows**: `fr = 9 - fr`, `tr = 9 - tr` (columns unchanged)
-- **Mirror columns**: `fc = 8 - fc`, `tc = 8 - tc` (rows unchanged)
+</details>
 
 #### Implementation locations
 
-- **`xq_ws_proxy.py`**: `game_to_fen(uci, mover_camp)` — converts Raw UCI → FEN for session JSON (`board_uci` field). Also handles echo filtering (`[ECHO]` skip) to prevent duplicate move records.
-- **`electron-app/renderer.js`**: `rawToFenUci(uci, userSide, isSent)` — same logic in JS, converts Raw UCI from `>>> [MOVE` log lines to FEN before applying to the board.
+- **`xq_modules/coord_conv.py`**: `game_to_fen(uci, mover_camp, fmt)` + `detect_format(first_uci)` — format-locked conversion with `fmt='A'` (all flip rows) or `fmt='B'` (all mirror columns).
+- **`electron-app/renderer.js`**: `rawToFenUci(uci, userSide, isSent)` — same format-locked logic, uses `_format` detected from proxy `[CAMP]` log line.
 - **`electron-app/renderer.js`**: `bx(c)`, `by(r)` — map FEN coordinates to canvas pixels. For Black user, applies 180° rotation (`8-c` for columns, `9-r` for rows) so Black pieces appear at bottom.
 
 #### Key pitfalls discovered
 
 1. **Echo doubling**: RECV messages that echo the user's own SEND must be filtered BEFORE conversion, because `mover_camp` differs (SEND=mover=self, RECV appears as opponent). The proxy's `[ECHO]` filter compares raw UCI before any conversion.
-2. **Column mirror vs row flip**: Not all Red-mover moves need row flip, and not all Black-mover moves are already FEN. The `from_row` is the only reliable signal — it tells you whether rows are already in FEN format.
+2. **Format locking > per-move from_row**: The format is a property of the game session, not individual moves. `from_row` varies naturally (pieces cross the river), but the conversion operation does NOT. First move's `from_row` determines the format; lock it and apply the same operation to every move regardless of mover camp or position.
 3. **Dual conversion danger**: Never chain two conversions. The `>>> [MOVE]` log line always carries Raw UCI (server's original). Only the renderer's `rawToFenUci()` converts it to FEN for board application. The `_rawUci` field preserves the raw value for the "游戏" display line.
+4. **SEND vs RECV format consistency**: Both SEND and RECV moves in the same game use the same format. The earlier hypothesis that SEND is "always format A" was incorrect — the format is determined by the game session, not by message direction.
 
 ### Core modules
 
