@@ -574,6 +574,9 @@ function refreshMoveList() {
   if (seqEl) {
     const gameParts = [];
     const boardParts = [];
+    const engParts = [];
+    const engByNum = {};
+    for (const e of _engineMoves) { engByNum[e.moveNum] = e.uci; }
     for (let i = 0; i < parsedMoves.length; i++) {
       const mv = parsedMoves[i];
       const rawUci = mv._rawUci || mv.uci || "";
@@ -587,8 +590,10 @@ function refreshMoveList() {
       const n = i + 1;
       gameParts.push(`<span class="move-num">${n}.</span><span class="${isRed ? 'move-red' : 'move-blk'}">${rawUci}</span>`);
       boardParts.push(`<span class="move-num">${n}.</span><span class="${isRed ? 'move-red' : 'move-blk'}">${fenUci}</span>`);
+      const engUci = engByNum[n];
+      engParts.push(`<span class="move-num">${n}.</span><span class="${isRed ? 'move-red' : 'move-blk'}">${engUci || '----'}</span>`);
     }
-    seqEl.innerHTML = `<div class="seq-row"><span style="color:#888;font-size:10px">游戏:</span> ${gameParts.join(" ")}</div><div class="seq-row"><span style="color:#888;font-size:10px">棋盘:</span> ${boardParts.join(" ")}</div>`;
+    seqEl.innerHTML = `<div class="seq-row"><span style="color:#888;font-size:10px">游戏:</span> ${gameParts.join(" ")}</div><div class="seq-row"><span style="color:#888;font-size:10px">棋盘:</span> ${boardParts.join(" ")}</div><div class="seq-row"><span style="color:#888;font-size:10px">引擎:</span> ${engParts.join(" ")}</div>`;
   }
 
   // Hide engine sequence (engine data is shown in engine panel)
