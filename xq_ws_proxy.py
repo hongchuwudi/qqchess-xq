@@ -772,16 +772,15 @@ def find_moves_in_vec(body):
 # 坐标转换：协议走子 → FEN 坐标
 # ============================================================
 
-def game_to_fen(uci, mover_camp):
+def game_to_fen(uci, my_camp, is_sent):
     """将游戏协议坐标转换为 FEN 坐标。
 
-    四种情况（用 from_row 自动区分）：
-    - Red mover, fr≤4: Red视角 → 翻行
-    - Red mover, fr>4: 已是FEN行 → 镜像列
-    - Black mover, fr≤4: Black视角=FEN → 不变
-    - Black mover, fr>4: Red视角 → 翻行
+    规则取决于视角（不依赖 from_row，过河不会误判）：
+    - 执红：所有走子都在红方视角 → 统一翻行
+    - 执黑 SEND：己方走子，黑方列是反的 → 镜像列
+    - 执黑 RECV：对手走子，已是 FEN → 不变
     """
-    if not mover_camp or len(uci) != 4:
+    if not my_camp or len(uci) != 4:
         return uci
 
     cols = 'abcdefghi'
@@ -793,16 +792,12 @@ def game_to_fen(uci, mover_camp):
     except (ValueError, IndexError):
         return uci
 
-    if mover_camp == 'red':
-        if fr <= 4:
-            return f"{uci[0]}{9 - fr}{uci[2]}{9 - tr}"
-        else:
-            return f"{cols[8 - fc]}{uci[1]}{cols[8 - tc]}{uci[3]}"
+    if my_camp == 'red':
+        return f"{uci[0]}{9 - fr}{uci[2]}{9 - tr}"
+    elif is_sent:
+        return f"{cols[8 - fc]}{uci[1]}{cols[8 - tc]}{uci[3]}"
     else:
-        if fr <= 4:
-            return f"{cols[8 - fc]}{uci[1]}{cols[8 - tc]}{uci[3]}"
-        else:
-            return f"{uci[0]}{9 - fr}{uci[2]}{9 - tr}"
+        return uci
 
 
 def detect_coord_format(first_uci, my_camp=None):
@@ -1050,8 +1045,8 @@ class QQChessWSProxy:
                             else:
                                 mover_camp = None
 
-                            # 转换为 FEN 坐标（用走子方视角）
-                            board_uci = game_to_fen(best['uci'], mover_camp)
+                            # 转换为 FEN 坐标（基于阵营+方向，不依赖 from_row）
+                            board_uci = game_to_fen(best['uci'], self.my_camp, is_own)
                             rec = {
                                 'num': self.move_n, 'seq': self.total,
                                 'time': ts, 'direction': direction,

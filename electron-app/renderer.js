@@ -241,30 +241,24 @@ let _lastFrom = null, _lastTo = null;
 let _bestFrom = null, _bestTo = null;
 
 // Convert raw 0-indexed UCI (server's original) → FEN coordinates
+// Rule depends on perspective, NOT from_row (breaks when pieces cross river):
+// - Red user: all moves in Red's view (Red 0-4, Black 5-9) → flip rows
+// - Black SEND: Black's view, columns reversed → mirror columns
+// - Black RECV: opponent's move, already FEN → no change
 function rawToFenUci(uci, userSide, isSent) {
   if (!userSide || !uci || uci.length < 4) return uci;
-  const moverCamp = isSent ? userSide : (userSide === "w" ? "b" : "w");
   const COLS = "abcdefghi";
   const fc = COLS.indexOf(uci[0]), fr = parseInt(uci[1]);
   const tc = COLS.indexOf(uci[2]), tr = parseInt(uci[3]);
   if (fc < 0 || tc < 0 || isNaN(fr) || isNaN(tr)) return uci;
 
-  if (moverCamp === "w") {
-    if (fr <= 4) {
-      // Red's perspective: flip rows
-      return uci[0] + (9 - fr) + uci[2] + (9 - tr);
-    } else {
-      // Already FEN rows, mirror columns
-      return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];
-    }
+  if (userSide === "w") {
+    return uci[0] + (9 - fr) + uci[2] + (9 - tr);
   } else {
-    if (fr <= 4) {
-      // Black's perspective: mirror columns
+    if (isSent) {
       return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];
-    } else {
-      // In Red's perspective: flip rows
-      return uci[0] + (9 - fr) + uci[2] + (9 - tr);
     }
+    return uci;
   }
 }
 
