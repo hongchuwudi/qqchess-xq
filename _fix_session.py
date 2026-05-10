@@ -84,7 +84,6 @@ def main():
                 print(f"    sSecKey     = {ssec[:60] + '...' if len(ssec) > 60 else ssec}")
                 if ssec:
                     login_info = login
-                    login_info['sOpenID'] = pkg.get('sOpenID', '')
             break
         break
 
@@ -94,9 +93,8 @@ def main():
 
     uin = login_info.get('uUin', 0)
     ssec = login_info.get('sSecKey') or login_info.get('sWXGameSessionKey', '')
-    openid = login_info.get('sOpenID', '')
 
-    session_key = derive_session_key(ssec, uin, openid)
+    session_key = derive_session_key(ssec, uin)
     print(f"\nsession_key  = {session_key.hex() if session_key else 'FAILED'}")
 
     # Update summary
