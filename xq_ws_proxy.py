@@ -91,6 +91,7 @@ class QQChessWSProxy:
         # 剥离 WS 帧
         d, jce_data = unwrap_ws(raw)
         if not d:
+            ctx.log.info(f"[?] #{self.total:04d} {len(raw):5d}B  unwrap_ws failed  head={raw[:16].hex()}")
             return
 
         # 解析 TPackage
