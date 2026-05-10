@@ -25,7 +25,7 @@ from datetime import datetime
 
 from mitmproxy import ctx
 
-from xq_modules.tea_crypto import tea_zjb_decrypt, derive_session_key
+from xq_modules.tea_crypto import tea_zjb_decrypt, tea_aad_encrypt, derive_session_key
 from xq_modules.jce_parser import JceIn
 from xq_modules.protocol import (parse_pkg, parse_login, parse_game_event,
                                    parse_request_play, parse_game_context)
@@ -59,9 +59,11 @@ class QQChessWSProxy:
         self._consecutive_86006 = 0  # count consecutive 86006 RECV for end detection
         self._format = None       # 'A' or 'B', locked on first move per game
         self._last_sent_uci = None  # raw UCI of last SEND, for echo filtering
-        self._inject_template = None   # raw WS frame of last SEND (auto-play template)
-        self._inject_coord_pos = -1    # byte offset of coord bytes in template
-        self._inject_flow = None       # current flow (for timer-based injection)
+        self._inject_raw = None        # raw WS frame of last SEND
+        self._inject_body = None       # encrypted body (to find in raw for replacement)
+        self._inject_plain = None      # decrypted TRequestPlay (contains coords in plaintext)
+        self._inject_coord_pos = -1    # byte offset of coords in _inject_plain
+        self._inject_flow = None       # current flow
         self._inject_timer = None      # periodic injection check timer
 
     def _start_inject_timer(self):
@@ -240,17 +242,25 @@ class QQChessWSProxy:
                             ctx.log.info(f"  [ECHO] skip {best['uci']}")
                         if direction == 'SEND' and msg_id == 86004:
                             self._last_sent_uci = best['uci']
-                            self._inject_template = raw
                             coord_bytes = bytes([
                                 best['from'][0] + 1, best['from'][1] + 1,
                                 best['to'][0] + 1, best['to'][1] + 1,
                             ])
-                            # Find the LAST occurrence (coords are near end of payload)
-                            pos = raw.rfind(coord_bytes)
+                            self._inject_raw = raw
+                            if encrypted and plain:
+                                # Search coords in DECRYPTED bytes, save encrypted body for replacement
+                                self._inject_body = body
+                                self._inject_plain = plain
+                                pos = plain.rfind(coord_bytes)
+                            else:
+                                self._inject_body = None
+                                self._inject_plain = None
+                                pos = raw.rfind(coord_bytes)
                             if pos >= 0:
                                 self._inject_coord_pos = pos
+                                ctx.log.info(f"[INJECT] template saved  pos={pos}  encrypted={encrypted}")
                             else:
-                                ctx.log.warn(f"[INJECT] template save: coords {coord_bytes.hex()} not found in raw!")
+                                ctx.log.warn(f"[INJECT] template save FAIL: coords {coord_bytes.hex()} not found  encrypted={encrypted}")
 
                         if not is_echo:
                             self.move_n += 1
@@ -330,9 +340,9 @@ class QQChessWSProxy:
             return
 
         uci = data.get('uci', '')
-        if not uci or not self._inject_template:
+        if not uci or not self._inject_raw:
             ctx.log.info(f"[INJECT] waiting for template (uci={uci})")
-            return  # keep file, try again next message
+            return
 
         cols = 'abcdefghi'
         try:
@@ -345,15 +355,34 @@ class QQChessWSProxy:
             return
         new_coords = bytes([fc, fr, tc, tr])
 
-        # Replace coords at saved byte position
         idx = self._inject_coord_pos
-        if idx < 0 or idx + 4 > len(self._inject_template):
+        if idx < 0:
             ctx.log.warn(f"[INJECT] bad coord_pos={idx}")
             return
-        modified = (self._inject_template[:idx] + new_coords +
-                     self._inject_template[idx + 4:])
 
-        ctx.log.info(f"[INJECT] {uci}  pos={idx}  {self._inject_template[idx:idx+4].hex()}→{new_coords.hex()}")
+        if self._inject_plain is not None:
+            # Encrypted: modify coords in decrypted plain, re-encrypt, replace in raw
+            if idx + 4 > len(self._inject_plain):
+                ctx.log.warn(f"[INJECT] coord_pos={idx} beyond plain len={len(self._inject_plain)}")
+                return
+            new_plain = self._inject_plain[:idx] + new_coords + self._inject_plain[idx + 4:]
+            new_body = tea_aad_encrypt(new_plain, self.session_key)
+            if not new_body:
+                ctx.log.warn("[INJECT] re-encrypt failed")
+                return
+            body_pos = self._inject_raw.rfind(self._inject_body)
+            if body_pos < 0:
+                ctx.log.warn("[INJECT] encrypted body not found in raw template")
+                return
+            modified = self._inject_raw[:body_pos] + new_body + self._inject_raw[body_pos + len(self._inject_body):]
+        else:
+            # Unencrypted: modify coords directly in raw
+            if idx + 4 > len(self._inject_raw):
+                ctx.log.warn(f"[INJECT] coord_pos={idx} beyond raw len={len(self._inject_raw)}")
+                return
+            modified = self._inject_raw[:idx] + new_coords + self._inject_raw[idx + 4:]
+
+        ctx.log.info(f"[INJECT] {uci}  pos={idx}  {new_coords.hex()}")
         try:
             flow.inject_message(flow.server_conn, modified)
             ctx.log.info(f"[INJECT] OK")
