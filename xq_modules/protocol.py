@@ -58,20 +58,6 @@ def _parse_tmsg(j):
     return {'head': head, 'body': body}
 
 
-def _try_read_ssec(j, tag):
-    """Read sSecKey from a given field tag, return hex string or ''."""
-    ssec = j.read_string(tag)
-    if not ssec:
-        return ''
-    try:
-        raw_val = ssec.encode('latin-1')
-    except Exception:
-        raw_val = b''
-    if len(raw_val) >= 16:
-        return raw_val.hex()
-    return ''
-
-
 def _scan_ssec_in_body(body, target_fields=(10, 11)):
     """Brute-force scan for sSecKey at target fields. Returns hex string or ''."""
     best = ''
@@ -113,26 +99,19 @@ def parse_login(body):
     """
     TResponseLogin — supports both QQ and WeChat variants.
 
-    QQChessZoneProto:     sSecKey at field 10, uUin at field 1
-    WX/alternate variant: sSecKey at field 11, sWXGameSessionKey at field 15
+    QQ variant:       sSecKey at field 10, uUin at field 1
+    WeChat variant:   sSecKey at field 11, sWXGameSessionKey at field 15
 
-    For WeChat login (iOpenPlatType=1), uUin may be 0 — in that case
-    sOpenID from the TPackage level is used for key derivation instead.
+    Uses raw-body scan first (avoids JCE reader position corruption
+    when a field has unexpected type), then JCE reader for uUin only.
     """
+    # Raw scan first — safe, doesn't corrupt reader state
+    ssec = _scan_ssec_in_body(body, (10, 11))
+    wx_key = _scan_ssec_in_body(body, (15,))
+
+    # JCE reader for structured fields (only after scan)
     j = JceIn(body)
     uin = j.read_uint32(1)
-
-    # Try field 10 first (common), then field 11 (alternate variant)
-    ssec = _try_read_ssec(j, 10) or _try_read_ssec(j, 11)
-
-    # Also try field 15 (sWXGameSessionKey) as last resort
-    wx_key = _try_read_ssec(j, 15)
-
-    # Brute-force fallback: scan for both field 10 and 11
-    if not ssec:
-        ssec = _scan_ssec_in_body(body, (10, 11))
-    if not wx_key:
-        wx_key = _scan_ssec_in_body(body, (15,))
 
     return {
         'iResultID': j.read_int32(0),
