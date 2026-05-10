@@ -99,7 +99,18 @@ function _resPath(...parts) {
   return path.join(base, ...parts);
 }
 const ADDON_PATH = _resPath("xq_ws_proxy.py");
-const ENGINE_DIR = _resPath("engines", "pikayu-20260131");
+
+function _findLatestPikayuDir() {
+  const enginesRoot = _resPath("engines");
+  try {
+    if (!fs.existsSync(enginesRoot)) return null;
+    const dirs = fs.readdirSync(enginesRoot).filter(d => /^pikayu-\d{8}$/.test(d));
+    if (dirs.length === 0) return null;
+    dirs.sort().reverse();
+    return path.join(enginesRoot, dirs[0]);
+  } catch (_) { return null; }
+}
+const ENGINE_DIR = _findLatestPikayuDir() || _resPath("engines", "pikayu-20260131");
 
 // ── State ───────────────────────────────────────────────────────────────
 let mitmProcess = null;

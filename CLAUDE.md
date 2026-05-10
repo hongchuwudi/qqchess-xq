@@ -39,11 +39,31 @@ Dependencies (no `requirements.txt`): `mitmproxy`, `requests`. Install manually.
 ### Protocol stack (bottom-up)
 
 1. **Transport**: WebSocket binary messages on `wss://wxlogin.qqchess.qq.com:443`
-2. **Framing**: `[varint length][0x0c1001 magic][session_id hex][route string][JCE body]`
+2. **Framing**: `[2B big-endian length][magic][route string][JCE body]`
+   - SEND magic: `01 10 cf XX YY` (5 bytes — first 3 fixed, last 2 = session identifier)
+   - RECV magic: `0c XX YY` (3 bytes — first 1 fixed, last 2 = session identifier)
+   - Session bytes vary per connection (QQ login: `10 01`, WeChat login: `1c 2c`, etc.)
+   - Implementation: `unwrap_ws()` in `xq_modules/move_utils.py` uses prefix matching (not exact match)
 3. **Encryption**: TEA-CBC (16 rounds, delta=0x9E3779B9), 128-bit key, with random head/tail padding. `iFlag & 1` on each message indicates encrypted.
 4. **Serialization**: JCE (Jce Communication Encoding), Tencent's proprietary binary format — similar to Protobuf with tagged fields
-5. **Session key derivation**: Login response 85001 delivers `sSecKey` + `uUin`. Derive: `sessionKey = TEA_decrypt(hexToBytes(sSecKey), pad16(str(uUin)))`
+5. **Session key derivation**: Login response 85001 delivers `sSecKey` + `uUin`. Derive: `sessionKey = TEA_decrypt(hexToBytes(sSecKey), pad16(str(uUin)))`. WeChat login uses the same derivation — `uUin` is always from TResponseLogin field 1, never from OpenID.
 6. **Board state**: Chinese Chess FEN (10 rows × 9 cols, uppercase=red, lowercase=black)
+
+#### QQ vs WeChat login (TResponseLogin variants)
+
+The server sends one of two TResponseLogin structures depending on login type:
+
+| Field | QQ variant | WeChat variant |
+|-------|-----------|---------------|
+| 0 | iResultID | iResultID |
+| 1 | **uUin** | **uUin** |
+| 10 | **sSecKey** | bShowButton (boolean) |
+| 11 | banEndTime | **sSecKey** |
+| 15 | iRoundID | sWXGameSessionKey |
+
+Key derivation is identical for both: `RFe(sSecKey, uUin)` — `str(uin)` padded to 16 bytes as TEA key.
+
+`parse_login()` in `xq_modules/protocol.py` uses raw-body byte scanning (not sequential JCE reads) to find sSecKey at either field 10 or 11, avoiding JCE reader position corruption from type mismatches.
 
 ### Coordinate systems & conversion
 

@@ -2,7 +2,17 @@ const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 
-const DEF_ENGINE_DIR = path.join(__dirname, "..", "engines", "pikayu-20260131");
+const ENGINES_ROOT = path.join(__dirname, "..", "engines");
+function _findLatestPikayuDir() {
+  try {
+    if (!fs.existsSync(ENGINES_ROOT)) return null;
+    const dirs = fs.readdirSync(ENGINES_ROOT).filter(d => /^pikayu-\d{8}$/.test(d));
+    if (dirs.length === 0) return null;
+    dirs.sort().reverse();
+    return path.join(ENGINES_ROOT, dirs[0]);
+  } catch (_) { return null; }
+}
+const DEF_ENGINE_DIR = _findLatestPikayuDir() || path.join(ENGINES_ROOT, "pikayu-20260131");
 
 // sse41-popcnt first — widest CPU compatibility
 const PREF_ORDER = ["sse41-popcnt", "bmi2", "avx2", "avxvnni", "avx512", "avx512icl", "vnni512"];

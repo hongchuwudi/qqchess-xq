@@ -54,8 +54,8 @@ qqchess-xq/
 │   ├── index.html              #   控制台界面
 │   ├── style.css               #   样式
 │   └── package.json            #   依赖 + 打包配置
-├── engines/                    # 象棋引擎
-│   └── pikayu-20260131/        #   皮卡鱼 (Pikafish)
+├── engines/                    # 象棋引擎 (需自行下载)
+│   └── pikayu-YYYYMMDD/        #   皮卡鱼 (Pikafish) — 自动匹配最新日期
 ├── data/
 │   ├── h5login.qqchess.qq.com.har  # 127 MB HAR 抓包样本
 │   └── sessions/                   # 代理会话输出 (自动生成)
@@ -269,10 +269,27 @@ MIT License © 2026
 
 ### 皮卡鱼 (Pikafish) 象棋引擎
 
-本项目集成的皮卡鱼引擎（`engines/pikayu-20260131/`）为 **GNU General Public License v3 (GPLv3)** 开源软件。
+项目自动检测 `engines/pikayu-*` 目录，取日期最新者。放置步骤：
+
+1. 从 [Pikafish Releases](https://github.com/pikafish/Pikafish/releases) 下载最新 Windows 压缩包
+2. 解压后得到 `pikafish-*.exe` 和 `pikafish.nnue`
+3. 在 `engines/` 下创建目录，命名格式 `pikayu-YYYYMMDD`（如 `pikayu-20260131`）
+4. 将 exe 和 nnue 文件放入该目录
+
+```
+engines/
+└── pikayu-20260131/
+    ├── pikafish-avx2.exe
+    ├── pikafish-bmi2.exe
+    ├── pikafish-sse41-popcnt.exe
+    └── pikafish.nnue
+```
+
+启动时自动选择兼容当前 CPU 的最优版本（优先级：sse41-popcnt → bmi2 → avx2 → avxvnni → avx512）。
+
+本项目集成的皮卡鱼引擎为 **GNU General Public License v3 (GPLv3)** 开源软件。
 
 - 项目主页: https://github.com/pikafish/Pikafish
-- 基于 GCC 编译的 Windows 可执行文件
 - NNUE 神经网络权重文件 (`pikafish.nnue`) 同为 GPLv3 许可
 - 对本项目的皮卡鱼集成代码（`pikafish-bridge.js`）同样受 GPLv3 约束
 
