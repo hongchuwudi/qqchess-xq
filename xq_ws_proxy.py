@@ -383,54 +383,12 @@ class QQChessWSProxy:
             modified = self._inject_raw[:idx] + new_coords + self._inject_raw[idx + 4:]
 
         ctx.log.info(f"[INJECT] {uci}  pos={idx}  {new_coords.hex()}")
-        ok = False
-        # Try all known mitmproxy injection APIs
-        if hasattr(flow, 'inject_message'):
-            try:
-                flow.inject_message(flow.server_conn, modified)
-                ok = True
-            except Exception as e:
-                ctx.log.info(f"[INJECT] flow.inject_message: {e}")
-        if not ok and hasattr(flow.websocket, 'inject_message'):
-            try:
-                flow.websocket.inject_message(flow, modified, to_client=False)
-                ok = True
-            except Exception as e:
-                ctx.log.info(f"[INJECT] flow.websocket.inject_message: {e}")
-        if not ok:
-            # Dump available methods on server_conn for debugging
-            try:
-                conn_methods = [m for m in dir(flow.server_conn) if not m.startswith('_')]
-                ctx.log.info(f"[INJECT] server_conn methods: {conn_methods}")
-            except: pass
-        if not ok:
-            # Fallback: write raw WebSocket frame to TCP writer
-            try:
-                import struct as _struct
-                frame = bytearray()
-                frame.append(0x82)  # FIN + BINARY
-                n = len(modified)
-                if n < 126:
-                    frame.append(0x80 | n)
-                elif n < 65536:
-                    frame.append(0x80 | 126)
-                    frame.extend(_struct.pack('>H', n))
-                else:
-                    frame.append(0x80 | 127)
-                    frame.extend(_struct.pack('>Q', n))
-                mask = os.urandom(4)
-                frame.extend(mask)
-                for i, b in enumerate(modified):
-                    frame.append(b ^ mask[i % 4])
-                flow.server_conn.writer.write(bytes(frame))
-                ok = True
-            except Exception as e:
-                ctx.log.info(f"[INJECT] raw write: {e}")
-        if ok:
+        try:
+            ctx.master.commands.execute("inject.websocket", flow, False, modified, False)
             ctx.log.info(f"[INJECT] OK")
             os.remove(inject_path)
-        else:
-            ctx.log.warn(f"[INJECT] all methods failed")
+        except Exception as e:
+            ctx.log.error(f"[INJECT] failed: {e}")
 
     def websocket_end(self, flow):
         if not flow.metadata.get('ok'):
