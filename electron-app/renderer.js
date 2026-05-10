@@ -1022,6 +1022,7 @@ window.qqchess.onLogLine((data) => {
       redrawBoard();
       refreshMoveList();
       scheduleAnalysis(result.fen, !mv.sent);
+    }
   }
 
   // New game detected — reset game state
