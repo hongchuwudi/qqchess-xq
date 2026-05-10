@@ -720,7 +720,14 @@ function updateEngineUI(result) {
     _pendingAutoPlay = false;
     const rawUci = fenToRawUci(result.bestMove, _userSide, true);
     const delay = 1000 + Math.random() * 1500;
-    setTimeout(() => window.qqchess.autoPlayMove(rawUci), delay);
+    console.log(`[autoplay] FEN=${result.bestMove} → raw=${rawUci}  fmt=${_format}  side=${_userSide}  delay=${(delay/1000).toFixed(1)}s`);
+    setTimeout(() => {
+      console.log(`[autoplay] firing: ${rawUci}`);
+      window.qqchess.autoPlayMove(rawUci);
+    }, delay);
+  } else if (_pendingAutoPlay) {
+    _pendingAutoPlay = false;
+    console.log(`[autoplay] SKIP: bestMove=${result.bestMove}  score=${result.score}`);
   }
 
   const score = result.score || 0;
