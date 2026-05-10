@@ -384,7 +384,7 @@ class QQChessWSProxy:
 
         ctx.log.info(f"[INJECT] {uci}  pos={idx}  {new_coords.hex()}")
         try:
-            ctx.master.commands.execute("inject.websocket", flow, False, modified, False)
+            ctx.master.commands.call("inject.websocket", flow, False, modified, False)
             ctx.log.info(f"[INJECT] OK")
             os.remove(inject_path)
         except Exception as e:
