@@ -249,12 +249,7 @@ class PikafishBridge {
     }
   }
 
-  _convRow(uci) {
-    if (!uci || uci.length < 4) return uci;
-    const fr = parseInt(uci[1]), tr = parseInt(uci[3]);
-    if (isNaN(fr) || isNaN(tr)) return uci;
-    return uci[0] + (9 - fr) + uci[2] + (9 - tr) + uci.substring(4);
-  }
+  _convRow(uci) { return uci; }  // UCI already FEN, no conversion needed
 
   _buildResult(bestMove, status, ponder) {
     let score = 0, depth = 0, pv = [];
