@@ -126,6 +126,28 @@ The earlier analysis (cases #1-#4 below, now superseded) assumed `mover_camp` + 
 3. **Dual conversion danger**: Never chain two conversions. The `>>> [MOVE]` log line always carries Raw UCI (server's original). Only the renderer's `rawToFenUci()` converts it to FEN for board application. The `_rawUci` field preserves the raw value for the "游戏" display line.
 4. **SEND vs RECV format consistency**: Both SEND and RECV moves in the same game use the same format. The earlier hypothesis that SEND is "always format A" was incorrect — the format is determined by the game session, not by message direction.
 
+#### Auto-play (WebSocket message injection)
+
+Auto-play works by injecting a modified SEND message directly into the WebSocket stream — NOT by clicking the game canvas. Flow:
+
+```
+Engine FEN bestmove → fenToRawUci() → raw UCI → _inject.json file
+    ↓
+Proxy timer (500ms) detects file → reads UCI → finds coords in decrypted template
+    → replaces 4B coords → re-encrypts → replaces body in raw frame
+    → ctx.master.commands.call("inject.websocket", ...) → server
+```
+
+**Key implementation details:**
+
+- **Template**: On every SEND 86004, the proxy saves `m.content` (raw WS frame), the encrypted `body`, and the decrypted `plain` (TRequestPlay). Coord byte position is found via `rfind` on `plain`.
+- **Coord replacement (encrypted case)**: Coords are replaced in the **decrypted** `plain`, then the modified `plain` is re-encrypted via `tea_aad_encrypt`. The new encrypted body replaces the old one in the raw frame via `rfind`.
+- **Injection API (mitmproxy 9)**: `ctx.master.commands.call("inject.websocket", flow, False, modified, False)` — the `call` method accepts `*args`; `execute` does not.
+- **Thread safety**: The 500ms timer runs in a `threading.Timer` (background thread). mitmproxy commands require the asyncio event loop. Use `loop.call_soon_threadsafe()` to schedule the injection when called from the timer thread.
+- **First move**: The template requires a prior SEND 86004. The user must make at least one manual move before auto-play can inject. After that, every subsequent move can be auto-played.
+- **fenToRawUci**: Both format operations (flip rows, mirror cols) are self-inverse, so `rawToFenUci` works as its own inverse → `fenToRawUci(uci, side, sent) = rawToFenUci(uci, side, sent)`.
+- **Random delay**: 1-2.5s delay before injection to simulate human play.
+
 ### Core modules
 
 | File | Role |
