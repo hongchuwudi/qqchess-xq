@@ -240,30 +240,30 @@ let _lastSentUci = null; // UCI of last SENT move, for echo filtering
 let _lastFrom = null, _lastTo = null;
 let _bestFrom = null, _bestTo = null;
 
+// Format lock: detected on first move, used for entire game (avoids river-crossing bug)
+let _format = null;  // 'A'(fr≤4) or 'B'(fr>4)
+
 // Convert raw 0-indexed UCI (server's original) → FEN coordinates
+// Uses _format locked at game start, NOT per-move from_row
 function rawToFenUci(uci, userSide, isSent) {
-  if (!userSide || !uci || uci.length < 4) return uci;
+  if (!userSide || !_format || !uci || uci.length < 4) return uci;
   const moverCamp = isSent ? userSide : (userSide === "w" ? "b" : "w");
   const COLS = "abcdefghi";
   const fc = COLS.indexOf(uci[0]), fr = parseInt(uci[1]);
   const tc = COLS.indexOf(uci[2]), tr = parseInt(uci[3]);
   if (fc < 0 || tc < 0 || isNaN(fr) || isNaN(tr)) return uci;
 
-  if (moverCamp === "w") {
-    if (fr <= 4) {
-      // Red's perspective: flip rows
-      return uci[0] + (9 - fr) + uci[2] + (9 - tr);
+  if (_format === 'A') {
+    if (moverCamp === "w") {
+      return uci[0] + (9 - fr) + uci[2] + (9 - tr);              // Red→row flip
     } else {
-      // Already FEN rows, mirror columns
-      return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];
+      return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];     // Black→col mirror
     }
-  } else {
-    if (fr <= 4) {
-      // Black's perspective: mirror columns
-      return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];
+  } else { // 'B'
+    if (moverCamp === "w") {
+      return COLS[8 - fc] + uci[1] + COLS[8 - tc] + uci[3];     // Red→col mirror
     } else {
-      // In Red's perspective: flip rows
-      return uci[0] + (9 - fr) + uci[2] + (9 - tr);
+      return uci[0] + (9 - fr) + uci[2] + (9 - tr);              // Black→row flip
     }
   }
 }
@@ -994,9 +994,10 @@ window.qqchess.onLogLine((data) => {
 
   // Camp detection from proxy [CAMP] log — authoritative side assignment
   if (data.text.includes("[CAMP]")) {
-    const campMatch = data.text.match(/\[CAMP\].*→\s*(red|black)/);
+    const campMatch = data.text.match(/\[CAMP\].*→\s*(red|black)\s+fmt=([AB])/);
     if (campMatch) {
       const newSide = campMatch[1] === "red" ? "w" : "b";
+      _format = campMatch[2];
       if (_userSide !== newSide) {
         _userSide = newSide;
         updateMySide();
@@ -1078,6 +1079,7 @@ window.qqchess.onLogLine((data) => {
     _userSide = null;
     _lastSentUci = null;
     _lastSentTime = 0;
+    _format = null;
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
     _gameActive = true;
     _restoreVersion++;
@@ -1185,9 +1187,10 @@ async function init() {
         logLines.push(entry);
         // Camp detection from proxy [CAMP] log
         if (entry.text.includes("[CAMP]")) {
-          const campMatch = entry.text.match(/\[CAMP\].*→\s*(red|black)/);
+          const campMatch = entry.text.match(/\[CAMP\].*→\s*(red|black)\s+fmt=([AB])/);
           if (campMatch) {
             _userSide = campMatch[1] === "red" ? "w" : "b";
+            _format = campMatch[2];
           }
         }
         // Mid-game FEN from server state sync (eventID=63)
