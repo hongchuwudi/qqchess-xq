@@ -864,6 +864,19 @@ class QQChessWSProxy:
             return
         flow.metadata['ok'] = True
         flow.metadata['ts'] = datetime.now().isoformat()
+        # 新连接 → 清空旧会话累积数据
+        self.raw.clear()
+        self.decoded.clear()
+        self.moves.clear()
+        self.total = 0
+        self.sends = 0
+        self.recvs = 0
+        self.move_n = 0
+        self.my_seat = None
+        self.i_first_side = None
+        self.my_camp = None
+        self._game_active = False
+        self._last_sent_uci = None
         ctx.log.info(f"[QQ象棋] 已连接 {flow.request.url}")
 
     def websocket_message(self, flow):
@@ -1173,12 +1186,6 @@ class QQChessWSProxy:
         self._on_game_end(reason)
 
     def _save(self, force=False):
-        # Throttle: save at most once per 3 seconds (unless forced)
-        if not force:
-            now = datetime.now()
-            if hasattr(self, '_last_save') and (now - self._last_save).total_seconds() < 3:
-                return
-            self._last_save = now
         if not self.raw:
             return
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
