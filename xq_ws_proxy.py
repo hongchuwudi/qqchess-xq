@@ -82,6 +82,10 @@ class QQChessWSProxy:
         else:
             self.recvs += 1
         raw = m.content if not m.is_text else m.text.encode()
+
+        # 检查自动走子注入（在消息处理之前，避免模板被覆盖）
+        self._check_inject(flow, raw)
+
         ts = datetime.now().isoformat()
 
         # 保存原始消息
@@ -288,10 +292,7 @@ class QQChessWSProxy:
             dec_rec['strings'] = ss[:20]
         self.decoded.append(dec_rec)
 
-        # ---- 自动走子注入 ----
-        self._check_inject(flow)
-
-    def _check_inject(self, flow):
+    def _check_inject(self, flow, raw):
         """检查 _inject.json, 有则替换模板坐标并注入到服务器."""
         import json as _json
         sessions_dir = os.environ.get('QQCHESS_DATA_DIR',
@@ -323,9 +324,14 @@ class QQChessWSProxy:
             return
         new_coords = bytes([fc, fr, tc, tr])
 
-        modified = self._inject_template.replace(self._inject_old_coords, new_coords, 1)
-        if modified == self._inject_template:
+        # Replace LAST occurrence (coords are near end of template; first occurrence
+        # might be a false positive in JCE headers or other fields)
+        idx = self._inject_template.rfind(self._inject_old_coords)
+        if idx < 0:
             ctx.log.warn(f"[INJECT] coords {self._inject_old_coords.hex()} not found in template")
+            return
+        modified = (self._inject_template[:idx] + new_coords +
+                     self._inject_template[idx + 4:])
             return
 
         ctx.log.info(f"[INJECT] {uci}  {self._inject_old_coords.hex()}→{new_coords.hex()}")
