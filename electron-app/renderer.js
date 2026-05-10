@@ -219,7 +219,7 @@ const PIECE_GLYPHS = {
   k: "將", a: "士", b: "象", n: "馬", r: "車", c: "炮", p: "卒",
 };
 
-let _userSide = null;  // "w" = user is Red, "b" = user is Black (detected from first move)
+let _userSide = "w";  // default Red at bottom, switched to "b" by [CAMP]
 let _lastSentTime = 0; // timestamp of last SENT move, for filtering echo false-positives
 let _lastSentUci = null; // UCI of last SENT move, for echo filtering
 let _lastFrom = null, _lastTo = null;
@@ -793,7 +793,7 @@ dom.btnClear.addEventListener("click", async () => {
   _currentFen = INITIAL_FEN;
   _lastAnalyzedFen = null;
   _lastFrom = _lastTo = _bestFrom = _bestTo = null;
-  _userSide = null;
+  _userSide = "w";
   _restoreVersion++;
   _autoPlay = false;
   _pendingAutoPlay = false;
@@ -900,7 +900,7 @@ async function restoreMovesFromSession() {
     // Reset board and replay current-game moves from session file
     GameStateTracker.reset();
     parsedMoves = [];
-    _userSide = null;
+    _userSide = "w";
     _currentFen = INITIAL_FEN;
     _lastFrom = _lastTo = _bestFrom = _bestTo = null;
 
@@ -1031,7 +1031,7 @@ window.qqchess.onLogLine((data) => {
     GameStateTracker.reset();
     _currentFen = INITIAL_FEN;
     _lastAnalyzedFen = null;
-    _userSide = null;
+    _userSide = "w";
     _lastSentUci = null;
     _lastSentTime = 0;
     _format = null;
@@ -1136,15 +1136,16 @@ async function init() {
     if (existingLogs && existingLogs.length > 0) {
       logLines = [];
       parsedMoves = [];
-      _userSide = null;
+      _userSide = "w";
       GameStateTracker.reset();
       for (const entry of existingLogs) {
         logLines.push(entry);
         // Camp detection from proxy [CAMP] log
         if (entry.text.includes("[CAMP]")) {
-          const campMatch = entry.text.match(/\[CAMP\].*→\s*(red|black)/);
+          const campMatch = entry.text.match(/\[CAMP\].*→\s*(red|black)\s+fmt=([AB])/);
           if (campMatch) {
             _userSide = campMatch[1] === "red" ? "w" : "b";
+            _format = campMatch[2];
           }
         }
         // Mid-game FEN from server state sync (eventID=63)
