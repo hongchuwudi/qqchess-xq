@@ -859,6 +859,16 @@ dom.btnAutoplay.addEventListener("click", () => {
   dom.btnAutoplay.textContent = _autoPlay ? "⏸ 停止自动" : "⚡ 自动走子";
   dom.btnAutoplay.classList.toggle("btn-accent", _autoPlay);
   window.qqchess.addLog(`[autoplay] ${_autoPlay ? 'ON' : 'OFF'}  fmt=${_format}  side=${_userSide}`);
+  // Fire immediately if it's our turn and engine has a recommendation
+  if (_autoPlay && parsedMoves.length > 0) {
+    const lastMv = parsedMoves[parsedMoves.length - 1];
+    const isOurTurn = !lastMv.sent; // last move was opponent's → our turn
+    window.qqchess.addLog(`[autoplay] ourTurn=${isOurTurn}  lastSent=${lastMv.sent}  moves=${parsedMoves.length}`);
+    if (isOurTurn) {
+      _pendingAutoPlay = true;
+      forceAnalyze();
+    }
+  }
 });
 
 dom.btnFlip.addEventListener("click", () => {
