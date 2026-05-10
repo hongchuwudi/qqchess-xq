@@ -774,12 +774,12 @@ function scheduleAnalysis(fen, isOpponentMove) {
   if (isOpponentMove && _autoPlay) {
     _pendingAutoPlay = true;
   }
-  // Debounce: wait 300ms after last move before starting analysis
+  // Debounce: 100ms to avoid duplicate triggers, then start analysis
   if (_analysisTimer) clearTimeout(_analysisTimer);
   _analysisTimer = setTimeout(() => {
     triggerAnalysis(fen);
     _analysisTimer = null;
-  }, 300);
+  }, 100);
 }
 
 // Force analysis of current position (for manual button)

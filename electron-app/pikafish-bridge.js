@@ -160,8 +160,15 @@ class PikafishBridge {
 
     if (!this.isReady) return { error: "Engine not ready" };
 
+    // Stop any in-progress analysis before starting new one
+    if (this._pending) {
+      this._send("stop");
+      clearTimeout(this._pending.timeout);
+      this._pending.resolve(this._buildResult("0000", "interrupted"));
+      this._pending = null;
+    }
+
     this._infoLines = [];
-    this._pending = null;
 
     const INITIAL_FEN = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w";
     const engMoves = (moveList || []).map((m) => this._convRow(m));
