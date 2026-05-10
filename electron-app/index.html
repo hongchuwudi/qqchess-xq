@@ -8,7 +8,7 @@
 </head>
 <body>
   <div id="app">
-    <!-- Game webview: left 2/3 -->
+    <!-- Game webview: left side -->
     <div id="game-pane">
       <webview id="game-webview" src="https://h5login.qqchess.qq.com/"
         allowpopups
@@ -16,143 +16,140 @@
       </webview>
     </div>
 
-    <!-- Control panel: right 1/3 -->
+    <!-- Control panel: right side -->
     <div id="control-pane">
-    <header class="header">
-      <h1 class="title">QQ Chess Proxy</h1>
+      <!-- Compact status bar: all states in one row -->
       <div class="status-bar">
         <span id="my-side" class="my-side">--</span>
         <span id="status-dot" class="dot dot-offline"></span>
         <span id="status-text" class="status-text">代理未启动</span>
+        <span class="status-divider"></span>
+        <span class="stat-inline">走子 <strong id="stat-moves">0</strong></span>
+        <span class="stat-inline" id="stat-data-card" title="点击更改数据目录">数据 <strong id="stat-data-size">--</strong></span>
+        <span id="stat-data-label" style="display:none"></span>
       </div>
-    </header>
 
-    <section class="stats">
-      <div class="stat-card">
-        <span class="stat-value" id="stat-moves">0</span>
-        <span class="stat-label">走子步数</span>
-      </div>
-      <div class="stat-card" id="stat-data-card" title="点击更改数据目录">
-        <span class="stat-value" id="stat-data-size" style="font-size:13px">--</span>
-        <span class="stat-label" id="stat-data-label">数据用量</span>
-      </div>
-    </section>
+      <!-- Engine panel: unchanged structure -->
+      <section id="engine-panel" class="engine-panel">
+        <div class="engine-header">
+          <div class="engine-title-row">
+            <span id="engine-dot" class="dot dot-offline"></span>
+            <h2 class="engine-name">皮卡鱼引擎</h2>
+            <span id="engine-status-text" class="engine-status-text">未启动</span>
+          </div>
+          <span id="engine-depth" class="engine-depth"></span>
+        </div>
+        <div id="engine-body" class="engine-body" style="display:none">
+          <div class="engine-best">
+            <span class="engine-label">最佳走法</span>
+            <span id="engine-bestmove" class="engine-bestmove">--</span>
+            <span id="engine-bestmove-cn" class="engine-bestmove-cn"></span>
+            <span class="engine-label">评分</span>
+            <span id="engine-score" class="engine-score">--</span>
+          </div>
+          <div class="engine-pv">
+            <span class="engine-label">变例</span>
+            <span id="engine-pv" class="engine-pv-text"></span>
+          </div>
+          <div class="engine-fen-row">
+            <span class="engine-label">FEN</span>
+            <span id="engine-fen" class="engine-fen"></span>
+          </div>
+        </div>
+      </section>
 
-    <section id="engine-panel" class="engine-panel">
-      <div class="engine-header">
-        <div class="engine-title-row">
-          <span id="engine-dot" class="dot dot-offline"></span>
-          <h2 class="engine-name">皮卡鱼引擎</h2>
-          <span id="engine-status-text" class="engine-status-text">未启动</span>
+      <!-- Board with move columns on sides -->
+      <section class="board-section">
+        <div class="board-layout">
+          <div class="side-moves side-left">
+            <div class="side-moves-header red">红方</div>
+            <div id="move-list-red" class="side-moves-list"></div>
+          </div>
+          <canvas id="board-canvas" width="340" height="360"></canvas>
+          <div class="side-moves side-right">
+            <div class="side-moves-header black">黑方</div>
+            <div id="move-list-black" class="side-moves-list"></div>
+          </div>
         </div>
-        <span id="engine-depth" class="engine-depth"></span>
-      </div>
-      <div id="engine-body" class="engine-body" style="display:none">
-        <div class="engine-best">
-          <span class="engine-label">最佳走法</span>
-          <span id="engine-bestmove" class="engine-bestmove">--</span>
-          <span id="engine-bestmove-cn" class="engine-bestmove-cn"></span>
-          <span class="engine-label">评分</span>
-          <span id="engine-score" class="engine-score">--</span>
-        </div>
-        <div class="engine-pv">
-          <span class="engine-label">变例</span>
-          <span id="engine-pv" class="engine-pv-text"></span>
-        </div>
-        <div class="engine-fen-row">
-          <span class="engine-label">FEN</span>
-          <span id="engine-fen" class="engine-fen"></span>
-        </div>
-      </div>
-    </section>
+        <div id="move-sequence" class="move-sequence"></div>
+        <div id="engine-sequence" class="engine-sequence"></div>
+      </section>
 
-    <section class="board-section">
-      <canvas id="board-canvas" width="340" height="360"></canvas>
-    </section>
+      <!-- Action buttons: two rows -->
+      <section class="actions">
+        <div class="btn-row">
+          <button id="btn-game" class="btn btn-primary">启动游戏</button>
+          <button id="btn-proxy" class="btn btn-warn">停止代理</button>
+          <button id="btn-restart" class="btn">重启代理</button>
+          <button id="btn-clear" class="btn">清空日志</button>
+          <button id="btn-sessions" class="btn">会话目录</button>
+          <button id="btn-settings" class="btn btn-settings">设置</button>
+        </div>
+        <div class="btn-row">
+          <button id="btn-analyze" class="btn btn-accent">立即分析</button>
+          <button id="btn-autoplay" class="btn">自动走子</button>
+          <button id="btn-flip" class="btn">翻转棋盘</button>
+        </div>
+      </section>
 
-    <section class="actions">
-      <button id="btn-game" class="btn btn-primary">启动游戏</button>
-      <button id="btn-proxy" class="btn btn-warn">停止代理</button>
-      <button id="btn-restart" class="btn">重启代理</button>
-      <button id="btn-analyze" class="btn btn-accent">立即分析</button>
-      <button id="btn-autoplay" class="btn">⚡ 自动走子</button>
-      <button id="btn-flip" class="btn">翻转棋盘</button>
-      <button id="btn-clear" class="btn">清空日志</button>
-      <button id="btn-sessions" class="btn">会话目录</button>
-      <button id="btn-settings" class="btn" style="border-color:#7c4dff;color:#b39ddb">设置</button>
-    </section>
+      <!-- Log section -->
+      <section class="log-section">
+        <div class="log-header">
+          <h2 class="log-title">日志</h2>
+          <div class="log-controls">
+            <label class="filter-label">
+              <input type="checkbox" id="filter-moves" checked>
+              <span>走子</span>
+            </label>
+            <label class="filter-label">
+              <input type="checkbox" id="filter-msgs">
+              <span>消息</span>
+            </label>
+            <span id="log-count" class="log-count">0 条</span>
+            <button id="btn-copy-log" class="btn btn-sm">复制日志</button>
+          </div>
+        </div>
+        <div id="log-view" class="log-view">
+          <div class="log-empty">等待 mitmproxy 输出...</div>
+        </div>
+      </section>
 
-    <section class="log-section">
-      <div class="log-header">
-        <h2 class="log-title">日志</h2>
-        <div class="log-controls">
-          <label class="filter-label">
-            <input type="checkbox" id="filter-moves" checked>
-            <span>走子</span>
-          </label>
-          <label class="filter-label">
-            <input type="checkbox" id="filter-msgs">
-            <span>消息</span>
-          </label>
-          <span id="log-count" class="log-count">0 条</span>
-          <button id="btn-copy-log" class="btn" style="padding:2px 8px;font-size:11px">复制日志</button>
-        </div>
-      </div>
-      <div id="log-view" class="log-view">
-        <div class="log-empty">等待 mitmproxy 输出...</div>
-      </div>
-    </section>
+      <section id="moves-section" class="moves-section" style="display:none">
+        <span id="move-count" class="log-count" style="display:none">0</span>
+      </section>
 
-    <section id="moves-section" class="moves-section" style="display:none">
-      <div class="log-header">
-        <h2 class="log-title">走子记录</h2>
-        <span id="move-count" class="log-count">0</span>
-      </div>
-      <div id="move-sequence" class="move-sequence"></div>
-      <div id="engine-sequence" class="engine-sequence"></div>
-      <div class="move-columns">
-        <div class="move-col">
-          <div class="move-col-header red">红方</div>
-          <div id="move-list-red" class="move-list-col"></div>
-        </div>
-        <div class="move-col">
-          <div class="move-col-header black">黑方</div>
-          <div id="move-list-black" class="move-list-col"></div>
-        </div>
-      </div>
-    </section>
-    <!-- Setup modal -->
-    <div id="setup-overlay" style="display:none">
-      <div id="setup-panel">
-        <div class="setup-header">
-          <span style="font-size:15px;font-weight:600;color:#4fc3f7">环境检测 &amp; 数据设置</span>
-          <button id="btn-setup-close" style="background:none;border:none;color:#888;font-size:18px;cursor:pointer">&times;</button>
-        </div>
-        <div style="font-size:11px;color:#888;line-height:1.6;margin-bottom:4px">
-          本工具依赖 <b>Python 3.11+</b> 和 <b>mitmproxy</b> 来拦截分析 QQ 象棋的网络通信。<br>
-          对局数据为临时文件，建议定期清理。
-        </div>
-        <div class="setup-row"><span class="setup-dot" id="dot-py"></span><span style="flex:1" id="txt-py">检测中...</span></div>
-        <div class="setup-guide" id="guide-py">
-          下载 <a href="#" class="setup-link" onclick="require('electron').shell.openExternal('https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe')">Python 3.11.9 安装包</a>（64位），<br>
-          安装时<b>务必勾选 "Add Python to PATH"</b>。
-        </div>
-        <div class="setup-row"><span class="setup-dot" id="dot-mitm"></span><span style="flex:1" id="txt-mitm">等待 Python...</span></div>
-        <div class="setup-guide" id="guide-mitm">
-          打开命令行（CMD 或 PowerShell），执行：<br>
-          <code>pip install mitmproxy</code>
-        </div>
-        <div class="setup-row" style="align-items:flex-start">
-          <span style="color:#888;font-size:11px;min-width:70px">数据目录</span>
-          <span style="flex:1;font-size:11px;font-family:Consolas,monospace;color:#81d4fa;word-break:break-all" id="setup-dir">--</span>
-        </div>
-        <div style="font-size:10px;color:#666">对局走子记录、会话日志保存位置，临时数据可随时清理</div>
-        <div style="display:flex;gap:6px">
-          <button class="btn" id="btn-setup-choose" style="font-size:11px;padding:4px 8px">选择目录</button>
-          <button class="btn" id="btn-setup-retry" style="font-size:11px;padding:4px 8px">重新检测</button>
+      <!-- Setup modal -->
+      <div id="setup-overlay" style="display:none">
+        <div id="setup-panel">
+          <div class="setup-header">
+            <span style="font-size:15px;font-weight:600;color:#4fc3f7">环境检测 &amp; 数据设置</span>
+            <button id="btn-setup-close" style="background:none;border:none;color:#888;font-size:18px;cursor:pointer">&times;</button>
+          </div>
+          <div style="font-size:11px;color:#888;line-height:1.6;margin-bottom:4px">
+            本工具依赖 <b>Python 3.11+</b> 和 <b>mitmproxy</b> 来拦截分析 QQ 象棋的网络通信。<br>
+            对局数据为临时文件，建议定期清理。
+          </div>
+          <div class="setup-row"><span class="setup-dot" id="dot-py"></span><span style="flex:1" id="txt-py">检测中...</span></div>
+          <div class="setup-guide" id="guide-py">
+            下载 <a href="#" class="setup-link" onclick="require('electron').shell.openExternal('https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe')">Python 3.11.9 安装包</a>（64位），<br>
+            安装时<b>务必勾选 "Add Python to PATH"</b>。
+          </div>
+          <div class="setup-row"><span class="setup-dot" id="dot-mitm"></span><span style="flex:1" id="txt-mitm">等待 Python...</span></div>
+          <div class="setup-guide" id="guide-mitm">
+            打开命令行（CMD 或 PowerShell），执行：<br>
+            <code>pip install mitmproxy</code>
+          </div>
+          <div class="setup-row" style="align-items:flex-start">
+            <span style="color:#888;font-size:11px;min-width:70px">数据目录</span>
+            <span style="flex:1;font-size:11px;font-family:Consolas,monospace;color:#81d4fa;word-break:break-all" id="setup-dir">--</span>
+          </div>
+          <div style="font-size:10px;color:#666">对局走子记录、会话日志保存位置，临时数据可随时清理</div>
+          <div style="display:flex;gap:6px">
+            <button class="btn" id="btn-setup-choose" style="font-size:11px;padding:4px 8px">选择目录</button>
+            <button class="btn" id="btn-setup-retry" style="font-size:11px;padding:4px 8px">重新检测</button>
+          </div>
         </div>
       </div>
-    </div>
     </div><!-- end control-pane -->
   </div>
 

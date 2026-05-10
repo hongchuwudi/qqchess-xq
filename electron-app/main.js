@@ -414,81 +414,6 @@ function watchSessionFiles() {
 }
 
 // ── App menu ────────────────────────────────────────────────────────────
-function buildMenu() {
-  const template = [
-    {
-      label: "文件",
-      submenu: [
-        {
-          label: "打开游戏窗口",
-          accelerator: "CmdOrCtrl+G",
-          click: () => {
-            if (controlWindow && !controlWindow.isDestroyed()) {
-              controlWindow.webContents.send("launch-game", GAME_URL);
-            }
-          },
-        },
-        {
-          label: "打开会话目录",
-          click: () => {
-            const { shell } = require("electron");
-            shell.openPath(SESSIONS_DIR);
-          },
-        },
-        { type: "separator" },
-        {
-          label: "退出",
-          accelerator: "CmdOrCtrl+Q",
-          click: () => app.quit(),
-        },
-      ],
-    },
-    {
-      label: "代理",
-      submenu: [
-        {
-          label: "启动代理",
-          click: () => {
-            if (!proxyRunning) {
-              startMitmproxy();
-              waitForProxy();
-            }
-          },
-        },
-        {
-          label: "停止代理",
-          click: () => stopMitmproxy(),
-        },
-        { type: "separator" },
-        {
-          label: "重新启动代理",
-          click: () => {
-            stopMitmproxy();
-            setTimeout(() => {
-              startMitmproxy();
-              waitForProxy();
-            }, 500);
-          },
-        },
-      ],
-    },
-    {
-      label: "视图",
-      submenu: [
-        { role: "reload" },
-        { role: "forceReload" },
-        { role: "toggleDevTools" },
-        { type: "separator" },
-        { role: "resetZoom" },
-        { role: "zoomIn" },
-        { role: "zoomOut" },
-      ],
-    },
-  ];
-
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
-}
 
 // ── IPC handlers ────────────────────────────────────────────────────────
 function setupIPC() {
@@ -720,7 +645,7 @@ app.whenReady().then(async () => {
   addLog(`[main] 数据目录: ${SESSIONS_DIR}`);
   addLog("[main] ========================================");
 
-  buildMenu();
+  Menu.setApplicationMenu(null);
   setupIPC();
   configureSession();
   watchSessionFiles();
