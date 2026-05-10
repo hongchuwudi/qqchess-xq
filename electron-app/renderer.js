@@ -656,6 +656,20 @@ function updateMySide() {
   if (!_userSide) { dom.mySide.textContent = "--"; dom.mySide.className = "my-side"; return; }
   dom.mySide.textContent = _userSide === "w" ? "🔴 红方" : "⚫ 黑方";
   dom.mySide.className = "my-side " + _userSide;
+  updateFmtLabel();
+}
+
+function updateFmtLabel() {
+  const el = document.getElementById("fmt-label");
+  if (!el) return;
+  if (!_format) { el.textContent = ""; return; }
+  if (_format === 'A') {
+    el.textContent = "A(翻行)";
+    el.title = "格式A: 全员翻行 9−row";
+  } else {
+    el.textContent = "B(镜像列)";
+    el.title = "格式B: 全员镜像列 8−col";
+  }
 }
 
 function updateStatus(status) {
@@ -1003,6 +1017,7 @@ window.qqchess.onLogLine((data) => {
     if (campMatch) {
       const newSide = campMatch[1] === "red" ? "w" : "b";
       _format = campMatch[2];
+      updateFmtLabel();
       if (_userSide !== newSide) {
         _userSide = newSide;
         updateMySide();
@@ -1196,6 +1211,7 @@ async function init() {
           if (campMatch) {
             _userSide = campMatch[1] === "red" ? "w" : "b";
             _format = campMatch[2];
+            updateFmtLabel();
           }
         }
         // Mid-game FEN from server state sync (eventID=63)
