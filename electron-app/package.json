@@ -6,13 +6,13 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build": "electron-builder --win",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux",
-    "build:all": "electron-builder --win --mac --linux",
-    "build:setup": "electron-builder --win nsis",
-    "build:portable": "electron-builder --win portable",
+    "build": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win",
+    "build:win": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win",
+    "build:mac": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --mac",
+    "build:linux": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --linux",
+    "build:all": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win --mac --linux",
+    "build:setup": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win nsis",
+    "build:portable": "set CSC_IDENTITY_AUTO_DISCOVERY=false && electron-builder --win portable",
     "build:dir": "electron-builder --win dir"
   },
   "author": "",
@@ -38,6 +38,8 @@
       }
     ],
     "win": {
+      "signAndEditExecutable": false,
+      "verifyUpdateCodeSignature": false,
       "target": [
         {
           "target": "nsis",
