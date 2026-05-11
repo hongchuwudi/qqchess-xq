@@ -35,6 +35,10 @@
       {
         "from": "../xq_ws_proxy.py",
         "to": "xq_ws_proxy.py"
+      },
+      {
+        "from": "../xq_modules",
+        "to": "xq_modules"
       }
     ],
     "win": {
