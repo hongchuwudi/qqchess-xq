@@ -491,6 +491,7 @@ let _analysisTimer = null;
 let _lastAnalyzedFen = null;
 let _autoPlay = false;
 let _pendingAutoPlay = false;  // set before analysis, checked when result arrives
+let _analysisRequestedMoveCount = 0;  // snapshotted move count when analysis starts
 let _gameActive = false;       // true while a game is in progress (between 开始/结束)
 let _engineMoves = [];         // track engine best moves for comparison
 
@@ -706,9 +707,9 @@ function updateEngineUI(result) {
 
   // Record engine best move (suggestion for the NEXT move to be played)
   if (result.bestMove && result.bestMove !== "0000") {
-    // After N moves, engine suggests move #N+1
-    const nextMoveNum = parsedMoves.length + 1;
-    // Avoid duplicate entries for the same move number
+    // Use the move count at the time analysis was *requested*,
+    // not when it completes — otherwise fast moves cause wrong numbering.
+    const nextMoveNum = (_analysisRequestedMoveCount || parsedMoves.length) + 1;
     if (!_engineMoves.find(e => e.moveNum === nextMoveNum)) {
       _engineMoves.push({ moveNum: nextMoveNum, uci: result.bestMove, score: result.score });
     }
@@ -759,6 +760,7 @@ async function triggerAnalysis(fen) {
   if (!engineReady) return;
   if (fen === _lastAnalyzedFen) return;
 
+  _analysisRequestedMoveCount = parsedMoves.length;
   _analysisVersion++;
   const version = _analysisVersion;
 
@@ -805,6 +807,7 @@ async function forceAnalyze() {
     dom.engineBestmove.textContent = "引擎未就绪";
     return;
   }
+  _analysisRequestedMoveCount = parsedMoves.length;
   _analysisVersion++;
   const version = _analysisVersion;
   dom.engineBestmove.textContent = "思考中...";
