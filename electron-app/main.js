@@ -30,8 +30,8 @@ let SESSIONS_DIR = (() => {
 })();
 const MAX_LOGS = 500;
 const MAX_DATA_SIZE_MB = 500;
-const CLEANUP_THRESHOLD_MB = 200;
-const CLEANUP_INTERVAL_MS = 60000;  // throttle cleanup to at most once per minute
+const CLEANUP_THRESHOLD_MB = 150;
+const CLEANUP_INTERVAL_MS = 120000;  // check every 2min (won't interrupt game)
 
 function saveConfig(key, value) {
   try {
@@ -166,6 +166,11 @@ function addLog(msg) {
 
   if (controlWindow && !controlWindow.isDestroyed()) {
     controlWindow.webContents.send("log-line", { time: logs[logs.length - 1].time, text: msg });
+  }
+
+  // Clean up old session files after each game (won't interrupt play)
+  if (msg.includes("[GAME] ====== 对局") && msg.includes("结束")) {
+    scheduleCleanup();
   }
 
   // Throttle status pushes to at most once per 500ms
