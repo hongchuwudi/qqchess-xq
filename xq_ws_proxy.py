@@ -25,7 +25,7 @@ from datetime import datetime
 
 from mitmproxy import ctx
 
-from xq_modules.tea_crypto import tea_zjb_decrypt, derive_session_key
+from xq_modules.tea_crypto import tea_zjb_decrypt, tea_aad_encrypt, derive_session_key
 from xq_modules.jce_parser import JceIn
 from xq_modules.protocol import (parse_pkg, parse_login, parse_game_event,
                                    parse_request_play, parse_game_context)
@@ -59,6 +59,23 @@ class QQChessWSProxy:
         self._consecutive_86006 = 0  # count consecutive 86006 RECV for end detection
         self._format = None       # 'A' or 'B', locked on first move per game
         self._last_sent_uci = None  # raw UCI of last SEND, for echo filtering
+        self._inject_raw = None        # raw WS frame of last SEND
+        self._inject_body = None       # encrypted body (to find in raw for replacement)
+        self._inject_plain = None      # decrypted TRequestPlay (contains coords in plaintext)
+        self._inject_coord_pos = -1    # byte offset of coords in _inject_plain
+        self._inject_flow = None       # current flow
+        self._inject_timer = None      # periodic injection check timer
+
+    def _start_inject_timer(self):
+        """每隔500ms主动检查注入文件(不依赖WS消息触发)"""
+        import threading as _th
+        def _check():
+            if self._inject_flow:
+                self._check_inject(self._inject_flow, None)
+            self._inject_timer = _th.Timer(0.5, _check)
+            self._inject_timer.daemon = True
+            self._inject_timer.start()
+        _check()
 
     def websocket_start(self, flow):
         if 'qqchess' not in flow.request.url:
@@ -66,6 +83,8 @@ class QQChessWSProxy:
         flow.metadata['ok'] = True
         flow.metadata['ts'] = datetime.now().isoformat()
         ctx.log.info(f"[QQ象棋] 已连接 {flow.request.url}")
+        if not self._inject_timer:
+            self._start_inject_timer()
 
     def websocket_message(self, flow):
         if not flow.metadata.get('ok'):
@@ -80,6 +99,10 @@ class QQChessWSProxy:
         else:
             self.recvs += 1
         raw = m.content if not m.is_text else m.text.encode()
+
+        # 检查自动走子注入（在消息处理之前，避免模板被覆盖）
+        self._check_inject(flow, raw)
+
         ts = datetime.now().isoformat()
 
         # 保存原始消息
@@ -217,8 +240,27 @@ class QQChessWSProxy:
                         is_echo = direction == 'RECV' and best['uci'] == self._last_sent_uci
                         if is_echo:
                             ctx.log.info(f"  [ECHO] skip {best['uci']}")
-                        if direction == 'SEND':
+                        if direction == 'SEND' and msg_id == 86004:
                             self._last_sent_uci = best['uci']
+                            coord_bytes = bytes([
+                                best['from'][0] + 1, best['from'][1] + 1,
+                                best['to'][0] + 1, best['to'][1] + 1,
+                            ])
+                            self._inject_raw = raw
+                            if encrypted and plain:
+                                # Search coords in DECRYPTED bytes, save encrypted body for replacement
+                                self._inject_body = body
+                                self._inject_plain = plain
+                                pos = plain.rfind(coord_bytes)
+                            else:
+                                self._inject_body = None
+                                self._inject_plain = None
+                                pos = raw.rfind(coord_bytes)
+                            if pos >= 0:
+                                self._inject_coord_pos = pos
+                                ctx.log.info(f"[INJECT] template saved  pos={pos}  encrypted={encrypted}")
+                            else:
+                                ctx.log.warn(f"[INJECT] template save FAIL: coords {coord_bytes.hex()} not found  encrypted={encrypted}")
 
                         if not is_echo:
                             self.move_n += 1
@@ -280,6 +322,82 @@ class QQChessWSProxy:
                 except: pass
             dec_rec['strings'] = ss[:20]
         self.decoded.append(dec_rec)
+
+    def _check_inject(self, flow, raw=None):
+        """检查 _inject.json, 有则替换模板坐标并注入到服务器."""
+        self._inject_flow = flow
+        import json as _json
+        sessions_dir = os.environ.get('QQCHESS_DATA_DIR',
+                        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'sessions'))
+        inject_path = os.path.join(sessions_dir, '_inject.json')
+        if not os.path.exists(inject_path):
+            return
+        try:
+            with open(inject_path, 'r', encoding='utf-8') as f:
+                data = _json.load(f)
+        except Exception as e:
+            ctx.log.warn(f"[INJECT] read error: {e}")
+            return
+
+        uci = data.get('uci', '')
+        if not uci or not self._inject_raw:
+            ctx.log.info(f"[INJECT] waiting for template (uci={uci})")
+            return
+
+        cols = 'abcdefghi'
+        try:
+            fc = cols.index(uci[0]) + 1
+            fr = int(uci[1]) + 1
+            tc = cols.index(uci[2]) + 1
+            tr = int(uci[3]) + 1
+        except (ValueError, IndexError):
+            ctx.log.warn(f"[INJECT] bad uci: {uci}")
+            return
+        new_coords = bytes([fc, fr, tc, tr])
+
+        idx = self._inject_coord_pos
+        if idx < 0:
+            ctx.log.warn(f"[INJECT] bad coord_pos={idx}")
+            return
+
+        if self._inject_plain is not None:
+            # Encrypted: modify coords in decrypted plain, re-encrypt, replace in raw
+            if idx + 4 > len(self._inject_plain):
+                ctx.log.warn(f"[INJECT] coord_pos={idx} beyond plain len={len(self._inject_plain)}")
+                return
+            new_plain = self._inject_plain[:idx] + new_coords + self._inject_plain[idx + 4:]
+            new_body = tea_aad_encrypt(new_plain, self.session_key)
+            if not new_body:
+                ctx.log.warn("[INJECT] re-encrypt failed")
+                return
+            body_pos = self._inject_raw.rfind(self._inject_body)
+            if body_pos < 0:
+                ctx.log.warn("[INJECT] encrypted body not found in raw template")
+                return
+            modified = self._inject_raw[:body_pos] + new_body + self._inject_raw[body_pos + len(self._inject_body):]
+        else:
+            # Unencrypted: modify coords directly in raw
+            if idx + 4 > len(self._inject_raw):
+                ctx.log.warn(f"[INJECT] coord_pos={idx} beyond raw len={len(self._inject_raw)}")
+                return
+            modified = self._inject_raw[:idx] + new_coords + self._inject_raw[idx + 4:]
+
+        ctx.log.info(f"[INJECT] {uci}  pos={idx}  {new_coords.hex()}")
+        try:
+            import asyncio as _asyncio
+            loop = _asyncio.get_event_loop()
+            if loop.is_running():
+                # In event loop — call directly
+                ctx.master.commands.call("inject.websocket", flow, False, modified, False)
+            else:
+                # From background thread — schedule on event loop
+                loop.call_soon_threadsafe(
+                    lambda: ctx.master.commands.call("inject.websocket", flow, False, modified, False)
+                )
+            ctx.log.info(f"[INJECT] OK")
+            os.remove(inject_path)
+        except Exception as e:
+            ctx.log.error(f"[INJECT] failed: {e}")
 
     def websocket_end(self, flow):
         if not flow.metadata.get('ok'):

@@ -268,6 +268,13 @@ function rawToFenUci(uci, userSide, isSent) {
   }
 }
 
+// fenToRawUci: engine FEN → game raw coords for auto-play clicking.
+// Both format ops (flip rows, mirror cols) are self-inverse,
+// so rawToFenUci works in reverse.
+function fenToRawUci(uci, userSide, isSent) {
+  return rawToFenUci(uci, userSide, isSent);
+}
+
 function setLastMove(uci) {
   const fc = BOARD_COLS.indexOf(uci[0]), fr = parseInt(uci[1]);
   const tc = BOARD_COLS.indexOf(uci[2]), tr = parseInt(uci[3]);
@@ -708,10 +715,19 @@ function updateEngineUI(result) {
     refreshMoveList();
   }
 
-  // Auto-play: if engine analyzed after opponent's move, fire the best move
+  // Auto-play: convert engine FEN → raw, fire after random delay
   if (_pendingAutoPlay && result.bestMove && result.bestMove !== "0000") {
     _pendingAutoPlay = false;
-    window.qqchess.autoPlayMove(result.bestMove);
+    const rawUci = fenToRawUci(result.bestMove, _userSide, true);
+    const delay = 1000 + Math.random() * 1500;
+    window.qqchess.addLog(`[autoplay] FEN=${result.bestMove} → raw=${rawUci}  fmt=${_format}  side=${_userSide}  delay=${(delay/1000).toFixed(1)}s`);
+    setTimeout(() => {
+      window.qqchess.addLog(`[autoplay] firing: ${rawUci}`);
+      window.qqchess.autoPlayMove(rawUci);
+    }, delay);
+  } else if (_pendingAutoPlay) {
+    _pendingAutoPlay = false;
+    window.qqchess.addLog(`[autoplay] SKIP: bestMove=${result.bestMove} score=${result.score}`);
   }
 
   const score = result.score || 0;
@@ -773,6 +789,7 @@ function scheduleAnalysis(fen, isOpponentMove) {
   // If auto-play is on and opponent just moved, flag for auto-fire after analysis
   if (isOpponentMove && _autoPlay) {
     _pendingAutoPlay = true;
+    window.qqchess.addLog(`[autoplay] scheduled: waiting for engine...  side=${_userSide}  fmt=${_format}`);
   }
   // Debounce: 100ms to avoid duplicate triggers, then start analysis
   if (_analysisTimer) clearTimeout(_analysisTimer);
@@ -841,6 +858,17 @@ dom.btnAutoplay.addEventListener("click", () => {
   _pendingAutoPlay = false;
   dom.btnAutoplay.textContent = _autoPlay ? "⏸ 停止自动" : "⚡ 自动走子";
   dom.btnAutoplay.classList.toggle("btn-accent", _autoPlay);
+  window.qqchess.addLog(`[autoplay] ${_autoPlay ? 'ON' : 'OFF'}  fmt=${_format}  side=${_userSide}`);
+  // Fire immediately if it's our turn and engine has a recommendation
+  if (_autoPlay && parsedMoves.length > 0) {
+    const lastMv = parsedMoves[parsedMoves.length - 1];
+    const isOurTurn = !lastMv.sent; // last move was opponent's → our turn
+    window.qqchess.addLog(`[autoplay] ourTurn=${isOurTurn}  lastSent=${lastMv.sent}  moves=${parsedMoves.length}`);
+    if (isOurTurn) {
+      _pendingAutoPlay = true;
+      forceAnalyze();
+    }
+  }
 });
 
 dom.btnFlip.addEventListener("click", () => {
