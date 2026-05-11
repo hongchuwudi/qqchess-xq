@@ -64,18 +64,31 @@ class QQChessWSProxy:
         self._inject_plain = None      # decrypted TRequestPlay (contains coords in plaintext)
         self._inject_coord_pos = -1    # byte offset of coords in _inject_plain
         self._inject_flow = None       # current flow
-        self._inject_timer = None      # periodic injection check timer
+        self._inject_loop = None       # main asyncio event loop (captured at startup)
+        self._inject_timer = None      # persistent timer thread
 
     def _start_inject_timer(self):
-        """每隔500ms主动检查注入文件(不依赖WS消息触发)"""
+        """启动单一线程,每500ms检查注入文件。捕获主事件循环避免线程问题。"""
+        import asyncio as _asyncio
         import threading as _th
-        def _check():
-            if self._inject_flow:
-                self._check_inject(self._inject_flow, None)
-            self._inject_timer = _th.Timer(0.5, _check)
-            self._inject_timer.daemon = True
-            self._inject_timer.start()
-        _check()
+        import time as _time
+        try:
+            self._inject_loop = _asyncio.get_event_loop()
+        except Exception:
+            pass
+
+        def _check_loop():
+            while True:
+                _time.sleep(0.5)
+                try:
+                    if self._inject_flow:
+                        self._check_inject(self._inject_flow, None)
+                except Exception:
+                    pass
+
+        t = _th.Thread(target=_check_loop, daemon=True)
+        t.start()
+        self._inject_timer = t
 
     def websocket_start(self, flow):
         if 'qqchess' not in flow.request.url:
@@ -384,16 +397,12 @@ class QQChessWSProxy:
 
         ctx.log.info(f"[INJECT] {uci}  pos={idx}  {new_coords.hex()}")
         try:
-            import asyncio as _asyncio
-            loop = _asyncio.get_event_loop()
-            if loop.is_running():
-                # In event loop — call directly
-                ctx.master.commands.call("inject.websocket", flow, False, modified, False)
-            else:
-                # From background thread — schedule on event loop
-                loop.call_soon_threadsafe(
+            if self._inject_loop:
+                self._inject_loop.call_soon_threadsafe(
                     lambda: ctx.master.commands.call("inject.websocket", flow, False, modified, False)
                 )
+            else:
+                ctx.master.commands.call("inject.websocket", flow, False, modified, False)
             ctx.log.info(f"[INJECT] OK")
             os.remove(inject_path)
         except Exception as e:

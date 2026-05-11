@@ -30,7 +30,8 @@ let SESSIONS_DIR = (() => {
 })();
 const MAX_LOGS = 500;
 const MAX_DATA_SIZE_MB = 500;
-const CLEANUP_THRESHOLD_MB = 100;
+const CLEANUP_THRESHOLD_MB = 200;
+const CLEANUP_INTERVAL_MS = 60000;  // throttle cleanup to at most once per minute
 
 function saveConfig(key, value) {
   try {
@@ -395,13 +396,11 @@ function scheduleCleanup() {
   _cleanupTimer = setTimeout(() => {
     _cleanupTimer = null;
     const result = cleanupOldData();
-    if (result.deleted > 0 && controlWindow && !controlWindow.isDestroyed()) {
-      controlWindow.webContents.send("log-line", {
-        time: new Date().toISOString(),
-        text: `[main] 数据目录超过 ${CLEANUP_THRESHOLD_MB}MB，已自动清理 ${result.deleted} 个旧文件`,
-      });
+    if (result.deleted > 0) {
+      addLog(`[main] 数据清理: 删除 ${result.deleted} 个旧文件, 释放 ${result.freedMB} MB`);
+      if (controlWindow && !controlWindow.isDestroyed()) notifyStatus();
     }
-  }, 5000);
+  }, CLEANUP_INTERVAL_MS);
 }
 
 function watchSessionFiles() {
